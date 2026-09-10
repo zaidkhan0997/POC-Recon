@@ -98,3 +98,8 @@ class ReconResult:
             "port_25_open": self.port_25_open,
             "candidates": [c.to_dict() for c in self.candidates],
         }
+
+    def get_valid_emails(self) -> List[str]:
+        """Returns list of verified VALID email addresses."""
+        return [c.email for c in self.candidates if c.status == VerificationStatus.VALID]
+

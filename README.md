@@ -103,11 +103,18 @@ pip install -r requirements.txt
 ## 4. Usage Guide
 
 ### Interactive Mode
-If you run `main.py` without arguments, it launches interactive prompts with rich formatting:
+If you run `main.py` without arguments, it launches interactive prompts asking for all target details and verification mode:
 
 ```bash
 python main.py
 ```
+**Interactive prompts provided:**
+1. **Target Company Website / Domain:** (e.g. `example.com` or `https://example.com`)
+2. **Target Person's Full Name:** (e.g. `Jane Doe` or `Dr. John C. Smith, MBA`, or leave blank if using LinkedIn)
+3. **Person's LinkedIn Profile URL:** (e.g. `https://www.linkedin.com/in/jane-doe-12345`)
+4. **Company LinkedIn URL:** (e.g. `https://www.linkedin.com/company/example-corp`)
+5. **Live Verification Mode:** choose `y` for live DNS + SMTP verification, or `n` for offline pattern generation
+6. **Open in Browser:** prompt to automatically open the generated interactive website report
 
 ### CLI Mode
 Provide the target company website and person's name directly via command-line arguments:
@@ -117,7 +124,8 @@ python main.py \
   --website "https://example.com" \
   --name "Jane Doe, MBA" \
   --company-linkedin "https://www.linkedin.com/company/example-corp" \
-  --person-linkedin "https://www.linkedin.com/in/jane-doe-12345"
+  --person-linkedin "https://www.linkedin.com/in/jane-doe-12345" \
+  --open
 ```
 
 ### Offline / Pattern-Only Mode (`--no-verify`)
@@ -214,24 +222,49 @@ If a domain has Catch-All enabled, its mail server responds with `250 OK` to **e
 |---|---|---|---|
 | `--website` | `-w` | Prompt | Target company website URL or domain (e.g. `example.com`) |
 | `--name` | `-n` | Prompt | Target person's full name (e.g. `Jane Doe, MBA`) |
-| `--company-linkedin` | - | None | Company LinkedIn URL (reference only) |
-| `--person-linkedin` | - | None | Target person's LinkedIn URL (used for slug name fallback) |
+| `--company-linkedin` | - | Prompt | Company LinkedIn URL (reference only) |
+| `--person-linkedin` | - | Prompt | Target person's LinkedIn URL (used for slug name fallback) |
 | `--proxy` | - | None | SOCKS5 proxy URL for Port 25 routing (e.g. `socks5://127.0.0.1:1080`) |
 | `--no-verify` / `--dry-run` | - | False | Offline mode: generates patterns & DNS data without SMTP checks |
 | `--dns-timeout` | - | `5.0` | Timeout in seconds for DNS queries |
 | `--smtp-timeout` | - | `8.0` | Timeout in seconds for SMTP connections |
 | `--delay` | - | `0.5` | Polite delay between candidate SMTP checks in seconds |
 | `--output` | `-o` | `results/` | Path for custom export file |
-| `--format` | - | `both` | Export format: `json`, `csv`, or `both` |
+| `--format` | - | `all` | Export format: `all`, `json`, `csv`, `txt`, or `html` |
+| `--open` / `--open-browser` | - | False | Automatically open generated interactive HTML website report in browser |
 | `--debug` | - | False | Enable verbose debugging and network logging |
 
 ---
 
-## 8. Output Formats (JSON & CSV)
+## 8. Output Formats (JSON, CSV, Plain Text & Interactive Website)
 
-Results are automatically saved to the `results/` directory.
+Results are displayed directly on screen in both a Rich table and a clean **Simple Text Format** (easy to copy & paste), and persisted into the `results/` directory:
 
-### Sample JSON (`results/<domain>_<name>_results.json`):
+- **JSON Data:** `results/<domain>_<name>_results.json`
+- **CSV Spreadsheet:** `results/<domain>_<name>_results.csv`
+- **Simple Text Summary:** `results/<domain>_<name>_results.txt`
+- **Interactive Website Report:** `results/<domain>_<name>_report.html` (responsive dark dashboard with search, filters, and 1-click copy buttons)
+
+### Sample Simple Text Format:
+```text
+========================================================================
+          POC-RECON RESULTS: SIMPLE TEXT FORMAT (COPY & PASTE)
+========================================================================
+Domain    : example.com
+Target    : Jane Doe
+LinkedIn  : https://www.linkedin.com/in/jane-doe-12345
+Provider  : Google Workspace | Primary MX: aspmx.l.google.com
+Port 25   : Reachable
+Catch-All : Disabled/Strict
+------------------------------------------------------------------------
+#   Candidate Email                 Status          Code / Notes
+------------------------------------------------------------------------
+1   jane.doe@example.com            [VALID]         (250) Mailbox verified deliverable
+2   jane@example.com                [INVALID]       (550) Recipient rejected: User unknown
+3   jdoe@example.com                [INVALID]       (550) Recipient rejected: User unknown
+========================================================================
+```
+
 ```json
 {
   "timestamp": "2026-09-10T10:15:30.123456+00:00",

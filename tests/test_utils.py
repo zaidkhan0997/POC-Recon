@@ -4,7 +4,7 @@ import os
 import json
 import csv
 from models import ReconResult, NameParts, MXRecord, CandidateResult, VerificationStatus, ProviderInfo
-from utils import export_results_json, export_results_csv
+from utils import export_results_json, export_results_csv, export_results_txt, export_results_html
 
 
 class TestUtils(unittest.TestCase):
@@ -69,6 +69,36 @@ class TestUtils(unittest.TestCase):
         self.assertEqual(reader[0]["status"], "VALID")
         self.assertEqual(reader[0]["smtp_code"], "250")
 
+    def test_export_results_txt(self):
+        txt_path = os.path.join(self.temp_dir.name, "out.txt")
+        export_results_txt(self.result, txt_path, company_linkedin="https://linkedin.com/company/ex", person_linkedin="https://linkedin.com/in/jane")
+        self.assertTrue(os.path.exists(txt_path))
+
+        with open(txt_path, "r", encoding="utf-8") as f:
+            content = f.read()
+
+        self.assertIn("example.com", content)
+        self.assertIn("Jane Doe", content)
+        self.assertIn("jane.doe@example.com", content)
+        self.assertIn("[VALID]", content)
+        self.assertIn("https://linkedin.com/in/jane", content)
+
+    def test_export_results_html(self):
+        html_path = os.path.join(self.temp_dir.name, "out.html")
+        export_results_html(self.result, html_path, company_linkedin="https://linkedin.com/company/ex", person_linkedin="https://linkedin.com/in/jane")
+        self.assertTrue(os.path.exists(html_path))
+
+        with open(html_path, "r", encoding="utf-8") as f:
+            content = f.read()
+
+        self.assertIn("<!DOCTYPE html>", content)
+        self.assertIn("Jane Doe", content)
+        self.assertIn("example.com", content)
+        self.assertIn("jane.doe@example.com", content)
+        self.assertIn("Google Workspace", content)
+        self.assertIn("copyText", content)
+
 
 if __name__ == "__main__":
     unittest.main()
+

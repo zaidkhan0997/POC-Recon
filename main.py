@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 import argparse
-import sys
 import os
+import sys
+import webbrowser
 from typing import Optional
 
 from rich.console import Console
@@ -14,7 +15,13 @@ from models import ReconResult, VerificationStatus, NameParts
 from parser import normalize_domain, parse_person_name, extract_name_from_linkedin_slug
 from generator import generate_email_patterns
 from verifier import run_verification
-from utils import export_results_json, export_results_csv, setup_logging
+from utils import (
+    export_results_json,
+    export_results_csv,
+    export_results_txt,
+    export_results_html,
+    setup_logging,
+)
 
 console = Console()
 
@@ -79,8 +86,8 @@ def display_summary_table(
 def display_results_table(result: ReconResult) -> None:
     table = Table(title="Candidate Email Verification Outcomes", show_header=True, header_style="bold blue")
     table.add_column("#", style="dim", width=4)
-    table.add_column("Candidate Email", style="bold white")
-    table.add_column("Pattern", style="cyan")
+    table.add_column("Candidate Email", style="bold white", no_wrap=True)
+    table.add_column("Pattern", style="cyan", no_wrap=True)
     table.add_column("Status", width=26)
     table.add_column("SMTP Code", justify="center", width=10)
     table.add_column("Diagnostics", style="dim")
@@ -109,6 +116,49 @@ def display_results_table(result: ReconResult) -> None:
     console.print()
 
 
+def display_simple_text_summary(
+    domain: str,
+    person: NameParts,
+    result: ReconResult,
+    company_linkedin: Optional[str] = None,
+    person_linkedin: Optional[str] = None
+) -> None:
+    """Displays results in a clean, copy-pasteable simple text format directly on screen."""
+    primary_mx = result.mx_records[0].host if result.mx_records else "None"
+    provider_name = result.provider.name if result.provider else "Unknown"
+
+    text_output = []
+    text_output.append("=" * 72)
+    text_output.append("          POC-RECON RESULTS: SIMPLE TEXT FORMAT (COPY & PASTE)")
+    text_output.append("=" * 72)
+    text_output.append(f"Domain    : {domain}")
+    text_output.append(f"Target    : {person.full_name}")
+    if person_linkedin:
+        text_output.append(f"LinkedIn  : {person_linkedin}")
+    if company_linkedin:
+        text_output.append(f"Company LI: {company_linkedin}")
+    text_output.append(f"Provider  : {provider_name} | Primary MX: {primary_mx}")
+    text_output.append(f"Port 25   : {'Reachable' if result.port_25_open else 'Blocked by ISP'}")
+    text_output.append(f"Catch-All : {'Enabled' if result.is_catch_all else 'Disabled/Strict'}")
+    text_output.append("-" * 72)
+    text_output.append(f"{'#':<4}{'Candidate Email':<32}{'Status':<16}{'Code / Notes'}")
+    text_output.append("-" * 72)
+
+    for i, c in enumerate(result.candidates, 1):
+        status_tag = f"[{c.status}]"
+        code_str = f"({c.smtp_code}) " if c.smtp_code else ""
+        diag = f"{code_str}{c.smtp_message or ''}".strip()
+        text_output.append(f"{i:<4}{c.email:<32}{status_tag:<16}{diag}")
+
+    text_output.append("=" * 72)
+    text_output.append(f"Summary: {len(result.candidates)} candidates | {len(result.get_valid_emails())} confirmed valid")
+    text_output.append("=" * 72)
+
+    simple_text_str = "\n".join(text_output)
+    console.print(Panel(simple_text_str, title="[bold green]Simple Text Format[/bold green]", border_style="green", expand=False))
+    console.print()
+
+
 def display_port_25_help() -> None:
     help_text = """[bold yellow]Notice: Outbound TCP Port 25 is Blocked on this Network[/bold yellow]
 Most consumer ISPs, public Wi-Fi, and default cloud VPS providers block Port 25 to mitigate spam.
@@ -116,7 +166,7 @@ Most consumer ISPs, public Wi-Fi, and default cloud VPS providers block Port 25 
 [bold white]Bypass Options:[/bold white]
 1. [bold cyan]SSH SOCKS5 Tunnel (Free & Instant):[/bold cyan]
    Run this in a separate terminal to tunnel through any remote server with open port 25:
-   [bold green]ssh -D 1080 user@your-vps.com[/bold green]
+   [bold green]ssh -N -D 1080 user@your-vps.com[/bold green]
    Then run POC-Recon with:
    [bold green]python main.py --proxy socks5://127.0.0.1:1080 ...[/bold green]
 
@@ -141,17 +191,20 @@ def main() -> None:
     parser.add_argument("--delay", type=float, default=0.5, help="Polite delay between SMTP queries in seconds (default: 0.5)")
     parser.add_argument("--no-verify", "--dry-run", action="store_true", help="Generate patterns and DNS intelligence without initiating SMTP connections")
     parser.add_argument("--output", "-o", help="Custom path for result export (e.g. results/output.json or results/output.csv)")
-    parser.add_argument("--format", choices=["json", "csv", "both"], default="both", help="Export file format (default: both)")
+    parser.add_argument("--format", choices=["json", "csv", "txt", "html", "all", "both"], default="all", help="Export format: all, json, csv, txt, or html (default: all)")
+    parser.add_argument("--open", "--open-browser", action="store_true", help="Automatically open the generated HTML website report in your web browser")
     parser.add_argument("--debug", action="store_true", help="Enable verbose debug logging")
 
     args = parser.parse_args()
     setup_logging(debug=args.debug)
     display_banner()
 
-    # Interactive Prompt Fallbacks
+    is_interactive = not bool(args.website and (args.name or args.person_linkedin))
+
+    # Interactive Prompt Flow
     website = args.website
     if not website:
-        website = Prompt.ask("[bold cyan]Enter Company Website URL or Domain[/bold cyan]")
+        website = Prompt.ask("[bold cyan]1. Enter Target Company Website URL or Domain[/bold cyan] [dim](e.g. example.com or https://company.com)[/dim]")
 
     try:
         domain = normalize_domain(website)
@@ -161,12 +214,31 @@ def main() -> None:
 
     name_str = args.name
     person_linkedin = args.person_linkedin
+    company_linkedin = args.company_linkedin
 
-    if not name_str and not person_linkedin:
-        name_str = Prompt.ask("[bold cyan]Enter Target Person's Full Name[/bold cyan]")
+    if is_interactive:
+        if not name_str:
+            name_str = Prompt.ask("[bold cyan]2. Enter Target Person's Full Name[/bold cyan] [dim](e.g. 'Jane Doe', or leave blank if using LinkedIn)[/dim]", default="")
+            if not name_str.strip():
+                name_str = None
 
+        if not person_linkedin:
+            person_linkedin = Prompt.ask("[bold cyan]3. Enter Person's LinkedIn Profile URL (Optional)[/bold cyan] [dim](e.g. https://www.linkedin.com/in/jane-doe-12345)[/dim]", default="")
+            if not person_linkedin.strip():
+                person_linkedin = None
+
+        if not company_linkedin:
+            company_linkedin = Prompt.ask("[bold cyan]4. Enter Company LinkedIn URL (Optional)[/bold cyan] [dim](e.g. https://www.linkedin.com/company/example)[/dim]", default="")
+            if not company_linkedin.strip():
+                company_linkedin = None
+
+        if not args.no_verify:
+            run_live = Prompt.ask("[bold cyan]5. Run Live SMTP Verification?[/bold cyan] [dim](y: live DNS & SMTP, n: offline pattern dry-run)[/dim]", choices=["y", "n"], default="y")
+            if run_live.lower() == "n":
+                args.no_verify = True
+
+    # Parse Person Name
     person: Optional[NameParts] = None
-
     if name_str:
         try:
             person = parse_person_name(name_str)
@@ -181,11 +253,11 @@ def main() -> None:
             console.print(f"[dim]Inferred name '{person.full_name}' from LinkedIn profile slug.[/dim]")
 
     if not person or not person.first_name:
-        console.print("[bold red]Error:[/bold red] Valid person name or LinkedIn profile slug is required.")
+        console.print("[bold red]Error:[/bold red] A valid person name or LinkedIn profile URL slug is required.")
         sys.exit(1)
 
     # Candidate Pattern Generation
-    console.print(f"[bold green]Generating corporate email patterns for:[/bold green] {person.full_name} @ {domain}")
+    console.print(f"\n[bold green]Generating corporate email patterns for:[/bold green] [bold white]{person.full_name}[/bold white] @ [bold cyan]{domain}[/bold cyan]")
     candidates = generate_email_patterns(
         first_name=person.first_name,
         middle_name=person.middle_name,
@@ -200,7 +272,8 @@ def main() -> None:
     console.print(f"[dim]Generated {len(candidates)} candidate corporate email patterns.[/dim]\n")
 
     # Verification Engine Run
-    with console.status("[bold cyan]Executing reconnaissance and verification...[/bold cyan]", spinner="dots"):
+    status_msg = "[bold cyan]Generating offline patterns & DNS intelligence...[/bold cyan]" if args.no_verify else "[bold cyan]Executing reconnaissance and live verification...[/bold cyan]"
+    with console.status(status_msg, spinner="dots"):
         result = run_verification(
             domain=domain,
             person=person,
@@ -212,11 +285,11 @@ def main() -> None:
             dry_run=args.no_verify
         )
 
-    # Output Presentation
+    # Screen Display: Summary Table
     display_summary_table(
         domain=domain,
         person=person,
-        company_linkedin=args.company_linkedin,
+        company_linkedin=company_linkedin,
         person_linkedin=person_linkedin,
         result=result
     )
@@ -224,14 +297,27 @@ def main() -> None:
     if not result.port_25_open and not args.no_verify:
         display_port_25_help()
 
+    # Screen Display: Candidate Outcomes Table
     display_results_table(result)
+
+    # Screen Display: Simple Text Format (Clean, Copy-Pasteable)
+    display_simple_text_summary(
+        domain=domain,
+        person=person,
+        result=result,
+        company_linkedin=company_linkedin,
+        person_linkedin=person_linkedin
+    )
 
     # Exporting Results
     results_dir = "results"
     os.makedirs(results_dir, exist_ok=True)
 
-    json_path = os.path.join(results_dir, f"{domain}_{person.first_name.lower()}_results.json")
-    csv_path = os.path.join(results_dir, f"{domain}_{person.first_name.lower()}_results.csv")
+    base_name = f"{domain}_{person.first_name.lower()}"
+    json_path = os.path.join(results_dir, f"{base_name}_results.json")
+    csv_path = os.path.join(results_dir, f"{base_name}_results.csv")
+    txt_path = os.path.join(results_dir, f"{base_name}_results.txt")
+    html_path = os.path.join(results_dir, f"{base_name}_report.html")
 
     if args.output:
         if args.output.endswith(".json"):
@@ -240,22 +326,52 @@ def main() -> None:
         elif args.output.endswith(".csv"):
             csv_path = args.output
             args.format = "csv"
+        elif args.output.endswith(".txt"):
+            txt_path = args.output
+            args.format = "txt"
+        elif args.output.endswith(".html"):
+            html_path = args.output
+            args.format = "html"
 
     exported_files = []
-    if args.format in ("json", "both"):
+    formats = [args.format] if args.format != "all" and args.format != "both" else ["json", "csv", "txt", "html"]
+
+    if "json" in formats:
         export_results_json(result, json_path)
-        exported_files.append(json_path)
+        exported_files.append(("JSON Data", json_path))
 
-    if args.format in ("csv", "both"):
+    if "csv" in formats:
         export_results_csv(result, csv_path)
-        exported_files.append(csv_path)
+        exported_files.append(("CSV Table", csv_path))
 
-    summary_text = f"[bold green]Reconnaissance Complete.[/bold green] Results persisted to:\n"
-    for ef in exported_files:
-        summary_text += f" • [cyan]{ef}[/cyan]\n"
+    if "txt" in formats:
+        export_results_txt(result, txt_path, company_linkedin=company_linkedin, person_linkedin=person_linkedin)
+        exported_files.append(("Simple Text Format", txt_path))
+
+    if "html" in formats:
+        export_results_html(result, html_path, company_linkedin=company_linkedin, person_linkedin=person_linkedin)
+        exported_files.append(("Interactive Website Report", html_path))
+
+    summary_text = "[bold green]Reconnaissance Complete.[/bold green] Results persisted to:\n"
+    for label, ef in exported_files:
+        abs_p = os.path.abspath(ef)
+        summary_text += f" • [bold white]{label}:[/bold white] [cyan]{ef}[/cyan] [dim](file://{abs_p})[/dim]\n"
 
     console.print(Panel(summary_text.strip(), title="Export Summary", border_style="green"))
+
+    # Browser Opening Option for HTML Website Report
+    if "html" in formats and os.path.exists(html_path):
+        open_report = args.open
+        if not open_report and is_interactive:
+            open_choice = Prompt.ask("\n[bold cyan]Open website report in your web browser now?[/bold cyan]", choices=["y", "n"], default="y")
+            open_report = (open_choice.lower() == "y")
+
+        if open_report:
+            web_url = f"file://{os.path.abspath(html_path)}"
+            console.print(f"[bold green]Opening website in browser:[/bold green] [cyan]{web_url}[/cyan]")
+            webbrowser.open(web_url)
 
 
 if __name__ == "__main__":
     main()
+
