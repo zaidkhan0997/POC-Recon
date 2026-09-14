@@ -142,10 +142,11 @@ def extract_name_from_linkedin_slug(slug_or_url: str) -> Optional[NameParts]:
         parts = clean.rstrip("/").split("/")
         clean = parts[-1]
 
-    # Remove trailing random hashes/numbers common in LinkedIn slugs (e.g. -12345678, -a1b2c3)
+    # Remove trailing random hashes/numbers common in LinkedIn slugs (e.g. -12345678, -a1b2c3, or johnsmith18)
     slug = clean.strip()
     slug = re.sub(r"-[0-9a-fA-F]{4,}$", "", slug)
     slug = re.sub(r"-\d+$", "", slug)
+    slug = re.sub(r"\d+$", "", slug)
 
     # Split by hyphen or underscore
     parts = [p.capitalize() for p in re.split(r"[-_.]+", slug) if p and not p.isdigit()]
