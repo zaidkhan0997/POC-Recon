@@ -73,6 +73,10 @@ def display_summary_table(
     else:
         table.add_row("Port 25 (SMTP)", "[bold red]✖ Blocked by ISP / Firewall[/bold red]")
 
+    # Verification Mode
+    if getattr(result, "verification_method", None):
+        table.add_row("Verification Mode", f"[bold cyan]{result.verification_method}[/bold cyan]")
+
     # Catch-All Status
     if result.is_catch_all:
         table.add_row("Catch-All Status", "[bold yellow]⚠️ Enabled (Accepts All Recipient Probes)[/bold yellow]")
@@ -159,19 +163,30 @@ def display_simple_text_summary(
     console.print()
 
 
-def display_port_25_help() -> None:
+def display_port_25_help(result: Optional[ReconResult] = None) -> None:
+    if result and getattr(result, "verification_method", "") == "HTTPS Cloud & Identity Verifier":
+        valid_count = len(result.get_valid_emails())
+        help_text = f"""[bold green]✔ Automatic HTTPS Cloud Fallback Engaged[/bold green]
+Outbound Port 25 (SMTP) is blocked on your local network/ISP.
+POC-Recon engaged [bold cyan]HTTPS Cloud & Identity Verifiers[/bold cyan] (Microsoft 365 Cloud Directory, Public OpenPGP Keyrings, and GitHub Commits).
+
+[bold white]Outcome:[/bold white] Successfully analyzed candidates over Port 443 with [bold green]{valid_count} confirmed valid email(s)[/bold green]! Zero external VPS or OCI setup required."""
+        console.print(Panel(help_text, title="Cloud Verification Active (Zero Port 25)", border_style="green"))
+        console.print()
+        return
+
     help_text = """[bold yellow]Notice: Outbound TCP Port 25 is Blocked on this Network[/bold yellow]
 Most consumer ISPs, public Wi-Fi, and default cloud VPS providers block Port 25 to mitigate spam.
 
 [bold white]Bypass Options:[/bold white]
-1. [bold cyan]SSH SOCKS5 Tunnel (Free & Instant):[/bold cyan]
-   Run this in a separate terminal to tunnel through any remote server with open port 25:
-   [bold green]ssh -N -D 1080 user@your-vps.com[/bold green]
-   Then run POC-Recon with:
-   [bold green]python main.py --proxy socks5://127.0.0.1:1080 ...[/bold green]
+1. [bold cyan]Automatic HTTPS Cloud Fallback (Default):[/bold cyan]
+   POC-Recon queries Microsoft 365 Cloud Directory and OpenPGP keyrings over HTTPS (Port 443) without needing Port 25.
 
-2. [bold cyan]Offline Pattern Generation / Dry-Run Mode:[/bold cyan]
-   Generate candidate corporate patterns and DNS intelligence without SMTP verification:
+2. [bold cyan]SSH SOCKS5 Tunnel (Optional for raw SMTP):[/bold cyan]
+   Run in a separate terminal: [bold green]ssh -N -D 1080 user@your-vps.com[/bold green]
+   Then run: [bold green]python main.py --proxy socks5://127.0.0.1:1080 ...[/bold green]
+
+3. [bold cyan]Offline Pattern Generation / Dry-Run Mode:[/bold cyan]
    [bold green]python main.py --no-verify ...[/bold green]"""
     console.print(Panel(help_text, title="Port 25 Troubleshooting", border_style="yellow"))
     console.print()
@@ -190,6 +205,7 @@ def main() -> None:
     parser.add_argument("--smtp-timeout", type=float, default=8.0, help="SMTP connection timeout in seconds (default: 8.0)")
     parser.add_argument("--delay", type=float, default=0.5, help="Polite delay between SMTP queries in seconds (default: 0.5)")
     parser.add_argument("--no-verify", "--dry-run", action="store_true", help="Generate patterns and DNS intelligence without initiating SMTP connections")
+    parser.add_argument("--no-cloud-fallback", action="store_true", help="Disable automatic HTTPS cloud fallback when Port 25 is blocked")
     parser.add_argument("--output", "-o", help="Custom path for result export (e.g. results/output.json or results/output.csv)")
     parser.add_argument("--format", choices=["json", "csv", "txt", "html", "all", "both"], default="all", help="Export format: all, json, csv, txt, or html (default: all)")
     parser.add_argument("--open", "--open-browser", action="store_true", help="Automatically open the generated HTML website report in your web browser")
@@ -282,7 +298,8 @@ def main() -> None:
             smtp_timeout=args.smtp_timeout,
             delay=args.delay,
             proxy_url=args.proxy,
-            dry_run=args.no_verify
+            dry_run=args.no_verify,
+            cloud_fallback=not args.no_cloud_fallback
         )
 
     # Screen Display: Summary Table
@@ -295,7 +312,7 @@ def main() -> None:
     )
 
     if not result.port_25_open and not args.no_verify:
-        display_port_25_help()
+        display_port_25_help(result)
 
     # Screen Display: Candidate Outcomes Table
     display_results_table(result)

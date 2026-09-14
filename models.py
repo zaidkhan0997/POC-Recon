@@ -74,6 +74,7 @@ class ReconResult:
     provider: Optional[ProviderInfo] = None
     is_catch_all: bool = False
     port_25_open: bool = True
+    verification_method: str = "SMTP (Port 25)"
     candidates: List[CandidateResult] = field(default_factory=list)
     timestamp: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
 
@@ -81,6 +82,7 @@ class ReconResult:
         return {
             "timestamp": self.timestamp,
             "domain": self.target_domain,
+            "verification_method": self.verification_method,
             "person": {
                 "first_name": self.person.first_name,
                 "middle_name": self.person.middle_name,

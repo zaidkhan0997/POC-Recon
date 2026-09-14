@@ -388,7 +388,19 @@ When run on a network where port 25 is blocked, direct connections will immediat
 
 ---
 
-### Solution 1: SSH SOCKS5 Dynamic Tunnel (Recommended)
+### Solution 1: Automatic HTTPS Cloud Fallback (Zero Port 25 / 100% Free)
+**No VPS, no SSH tunnels, and no API keys required.**
+
+When POC-Recon detects that Port 25 is blocked by your ISP, it automatically engages its built-in **HTTPS Cloud & Identity Verifier engine** over standard Port 443:
+1. **Microsoft 365 Cloud Directory Probe:** For domains using Microsoft 365 / Exchange Online (over 65% of enterprise businesses), queries the real-time directory to verify whether the specific mailbox exists (`IfExistsResult: 0`) or not (`IfExistsResult: 1`).
+2. **Public OpenPGP Keyring:** Discovers verified cryptographic public key identities published on keyservers (`keyserver.ubuntu.com`).
+3. **GitHub Public Commits Engine:** Cross-references open developer and committer metadata for technical and open-source company staff.
+
+This runs automatically out-of-the-box. To disable this fallback and strictly enforce SMTP-only probing, pass `--no-cloud-fallback`.
+
+---
+
+### Solution 2: SSH SOCKS5 Dynamic Tunnel (For Remote SMTP)
 If you have access to any remote VPS or server where outbound Port 25 is open (e.g., a cheap $3/month VPS on Hetzner, OVH, or Linode), you can route POC-Recon's SMTP verification through an SSH dynamic proxy in **one command**:
 
 #### Step 1: Open the SSH Dynamic SOCKS5 Tunnel
@@ -412,16 +424,16 @@ POC-Recon will route all DNS resolution and SMTP verification handshakes through
 
 ---
 
-### Solution 2: Pre-Flight Fast-Fail Diagnostic
+### Solution 3: Pre-Flight Fast-Fail Diagnostic
 Traditional email scripts attempt to verify each candidate email one-by-one. When port 25 is blocked, each candidate times out for 10 seconds, forcing you to wait 2+ minutes for a failed scan.
 
 POC-Recon features an automated **Pre-Flight Port 25 Check**:
 - It tests a single lightweight TCP connection to the primary MX server before touching candidates.
-- If blocked, it **immediately stops**, flags candidates as `UNVERIFIED / PORT BLOCKED`, and displays an actionable troubleshooting panel instead of hanging.
+- If blocked and `--no-cloud-fallback` is set, it **immediately stops**, flags candidates as `UNVERIFIED / PORT BLOCKED`, and displays an actionable troubleshooting panel instead of hanging.
 
 ---
 
-### Solution 3: DNS Intelligence & Provider Fingerprinting
+### Solution 4: DNS Intelligence & Provider Fingerprinting
 Even if Port 25 is blocked, POC-Recon queries the target domain's MX and SPF TXT records via standard DNS (UDP/TCP port 53, which is never blocked).
 
 It fingerprints the email infrastructure:
@@ -463,6 +475,7 @@ If a domain has Catch-All enabled, its mail server responds with `250 OK` to **e
 | `--company-linkedin` | - | Prompt | Company LinkedIn URL (reference only) |
 | `--person-linkedin` | - | Prompt | Target person's LinkedIn URL (used for slug name fallback) |
 | `--proxy` | - | None | SOCKS5 proxy URL for Port 25 routing (e.g. `socks5://127.0.0.1:1080`) |
+| `--no-cloud-fallback` | - | False | Disable automatic HTTPS cloud verification fallback when Port 25 is blocked |
 | `--no-verify` / `--dry-run` | - | False | Offline mode: generates patterns & DNS data without SMTP checks |
 | `--dns-timeout` | - | `5.0` | Timeout in seconds for DNS queries |
 | `--smtp-timeout` | - | `8.0` | Timeout in seconds for SMTP connections |

@@ -1,6 +1,10 @@
+import json
 import logging
 import socket
 import time
+import urllib.error
+import urllib.parse
+import urllib.request
 import uuid
 from typing import List, Optional, Tuple
 
@@ -359,6 +363,178 @@ def verify_single_candidate(
         client.close()
 
 
+def verify_m365_cloud(email: str, timeout: float = 5.0) -> Tuple[Optional[VerificationStatus], Optional[int], str]:
+    """
+    Checks whether an email exists in a Microsoft 365 / Entra ID tenant via public HTTPS endpoint (Port 443).
+    Bypasses Port 25 ISP blocks and third-party gateway catch-all filters (Proofpoint, Mimecast).
+    Returns (status, code, message).
+    """
+    url = "https://login.microsoftonline.com/common/GetCredentialType"
+    payload = json.dumps({"Username": email}).encode("utf-8")
+    req = urllib.request.Request(
+        url,
+        data=payload,
+        headers={
+            "Content-Type": "application/json",
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+        }
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+            if_exists = data.get("IfExistsResult")
+            throttle = data.get("ThrottleStatus", 0)
+
+            if throttle == 1:
+                return VerificationStatus.UNVERIFIED_TEMP_ERROR, 429, "Microsoft 365 request throttled"
+
+            # 0 = Exists in tenant
+            if if_exists == 0:
+                return VerificationStatus.VALID, 200, "Verified: Mailbox exists in Microsoft 365 Cloud Directory"
+            # 1 = Does not exist
+            elif if_exists == 1:
+                return VerificationStatus.INVALID, 404, "Recipient not found in Microsoft 365 Cloud Directory"
+            else:
+                return None, None, f"M365 non-definitive response code: {if_exists}"
+    except (urllib.error.URLError, TimeoutError, socket.timeout) as e:
+        logger.debug(f"M365 lookup timeout or error for {email}: {e}")
+        return None, None, f"M365 lookup connection error: {e}"
+    except Exception as e:
+        logger.debug(f"M365 unexpected error for {email}: {e}")
+        return None, None, f"M365 error: {e}"
+
+
+def verify_pgp_keyring(email: str, timeout: float = 5.0) -> Tuple[Optional[VerificationStatus], Optional[int], str]:
+    """
+    Queries public OpenPGP keyserver (keyserver.ubuntu.com) over HTTPS (Port 443).
+    Returns (status, code, message) if confirmed.
+    """
+    encoded_email = urllib.parse.quote(email)
+    url = f"https://keyserver.ubuntu.com/pks/lookup?search={encoded_email}&op=index&options=mr"
+    req = urllib.request.Request(
+        url,
+        headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            text = resp.read().decode("utf-8", errors="replace")
+            for line in text.splitlines():
+                if line.startswith("uid:") and email.lower() in line.lower():
+                    return VerificationStatus.VALID, 200, "Confirmed via Public OpenPGP Keyring (HTTPS)"
+            return None, None, "Email not found in PGP keyring"
+    except urllib.error.HTTPError as e:
+        if e.code == 404:
+            return None, None, "Email not found in PGP keyring (404)"
+        return None, None, f"PGP keyserver HTTP {e.code}"
+    except Exception as e:
+        logger.debug(f"PGP lookup error for {email}: {e}")
+        return None, None, f"PGP lookup error: {e}"
+
+
+def verify_github_commits(email: str, timeout: float = 5.0) -> Tuple[Optional[VerificationStatus], Optional[int], str]:
+    """
+    Queries GitHub public Search API for commit records authored by this email address.
+    Returns (status, code, message) if confirmed.
+    """
+    encoded_email = urllib.parse.quote(email)
+    url = f"https://api.github.com/search/commits?q=committer-email:{encoded_email}"
+    req = urllib.request.Request(
+        url,
+        headers={
+            "Accept": "application/vnd.github.cloak-preview",
+            "User-Agent": "POC-Recon-OSINT"
+        }
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+            count = data.get("total_count", 0)
+            if count > 0:
+                return VerificationStatus.VALID, 200, f"Confirmed via GitHub Commit History ({count} public commits)"
+            return None, None, "No GitHub commits found"
+    except Exception as e:
+        logger.debug(f"GitHub search error for {email}: {e}")
+        return None, None, f"GitHub search error: {e}"
+
+
+def run_alternative_verification(
+    candidates: List[Tuple[str, str]],
+    domain: str,
+    provider: Optional[ProviderInfo],
+    timeout: float = 5.0,
+    delay: float = 0.3
+) -> List[CandidateResult]:
+    """
+    Executes alternative HTTPS-based verification (M365 Cloud Directory, PGP Keyrings, GitHub Commits).
+    Runs completely over Port 443 (HTTPS) without Port 25 or external VPS requirements.
+    """
+    results: List[CandidateResult] = []
+    is_m365 = bool(
+        provider and (
+            "Microsoft 365" in provider.name or
+            "Exchange Online" in provider.name or
+            "outlook.com" in provider.details.lower()
+        )
+    )
+
+    # If provider wasn't explicitly detected as M365 by MX, check if domain is managed by M365:
+    if not is_m365 and candidates:
+        sample_email = candidates[0][0]
+        st, _, _ = verify_m365_cloud(sample_email, timeout=timeout)
+        if st in (VerificationStatus.VALID, VerificationStatus.INVALID):
+            is_m365 = True
+
+    for i, (email, pattern) in enumerate(candidates):
+        if i > 0 and delay > 0:
+            time.sleep(delay)
+
+        status: Optional[VerificationStatus] = None
+        code: Optional[int] = None
+        msg: str = ""
+
+        # Step 1: M365 Directory Check
+        if is_m365:
+            m_status, m_code, m_msg = verify_m365_cloud(email, timeout=timeout)
+            if m_status is not None:
+                status = m_status
+                code = m_code
+                msg = m_msg
+
+        # Step 2: If still not verified, check Public PGP Keyring
+        if status != VerificationStatus.VALID:
+            p_status, p_code, p_msg = verify_pgp_keyring(email, timeout=timeout)
+            if p_status == VerificationStatus.VALID:
+                status = p_status
+                code = p_code
+                msg = p_msg
+
+        # Step 3: If still not verified, check GitHub Commits
+        if status != VerificationStatus.VALID:
+            g_status, g_code, g_msg = verify_github_commits(email, timeout=timeout)
+            if g_status == VerificationStatus.VALID:
+                status = g_status
+                code = g_code
+                msg = g_msg
+
+        # Fallback if no definitive status obtained
+        if status is None:
+            status = VerificationStatus.UNVERIFIED_PORT_BLOCKED
+            code = None
+            msg = "Port 25 blocked by ISP; HTTPS alternative checks non-conclusive"
+
+        results.append(
+            CandidateResult(
+                email=email,
+                pattern_name=pattern,
+                status=status,
+                smtp_code=code,
+                smtp_message=msg
+            )
+        )
+
+    return results
+
+
 def run_verification(
     domain: str,
     person: NameParts,
@@ -367,7 +543,8 @@ def run_verification(
     smtp_timeout: float = 8.0,
     delay: float = 0.5,
     proxy_url: Optional[str] = None,
-    dry_run: bool = False
+    dry_run: bool = False,
+    cloud_fallback: bool = True
 ) -> ReconResult:
     """
     Coordinates the end-to-end discovery and verification workflow:
@@ -425,17 +602,29 @@ def run_verification(
     result.port_25_open = port_25_open
 
     if not port_25_open:
-        logger.warning("Port 25 is blocked or unreachable on current network.")
-        for email, pattern in candidates:
-            result.candidates.append(
-                CandidateResult(
-                    email=email,
-                    pattern_name=pattern,
-                    status=VerificationStatus.UNVERIFIED_PORT_BLOCKED,
-                    smtp_message="Outbound TCP port 25 blocked by local ISP or cloud firewall"
-                )
+        if cloud_fallback:
+            logger.info("Port 25 blocked by local network. Engaging HTTPS Cloud & Identity Verifiers...")
+            result.verification_method = "HTTPS Cloud & Identity Verifier"
+            result.candidates = run_alternative_verification(
+                candidates=candidates,
+                domain=domain,
+                provider=provider,
+                timeout=smtp_timeout,
+                delay=delay
             )
-        return result
+            return result
+        else:
+            logger.warning("Port 25 is blocked or unreachable on current network.")
+            for email, pattern in candidates:
+                result.candidates.append(
+                    CandidateResult(
+                        email=email,
+                        pattern_name=pattern,
+                        status=VerificationStatus.UNVERIFIED_PORT_BLOCKED,
+                        smtp_message="Outbound TCP port 25 blocked by local ISP or cloud firewall"
+                    )
+                )
+            return result
 
     # Catch-all detection
     logger.info("Checking for Catch-All configuration...")
@@ -450,6 +639,58 @@ def run_verification(
     # Candidate verification
     for i, (email, pattern) in enumerate(candidates):
         if is_catch_all:
+            # Attempt HTTPS cloud resolution for catch-all domains (e.g. Microsoft 365 or PGP)
+            resolved = False
+            if cloud_fallback:
+                is_m365 = bool(
+                    provider and (
+                        "Microsoft 365" in provider.name or
+                        "Exchange Online" in provider.name or
+                        "outlook.com" in provider.details.lower()
+                    )
+                )
+                if is_m365:
+                    m_st, m_cd, m_m = verify_m365_cloud(email, timeout=smtp_timeout)
+                    if m_st == VerificationStatus.VALID:
+                        result.candidates.append(
+                            CandidateResult(
+                                email=email,
+                                pattern_name=pattern,
+                                status=VerificationStatus.VALID,
+                                smtp_code=200,
+                                smtp_message="Confirmed: Mailbox exists in Microsoft 365 tenant (resolved catch-all)"
+                            )
+                        )
+                        resolved = True
+                    elif m_st == VerificationStatus.INVALID:
+                        result.candidates.append(
+                            CandidateResult(
+                                email=email,
+                                pattern_name=pattern,
+                                status=VerificationStatus.INVALID,
+                                smtp_code=404,
+                                smtp_message="Recipient not found in Microsoft 365 tenant (resolved catch-all)"
+                            )
+                        )
+                        resolved = True
+
+                if not resolved:
+                    p_st, p_cd, p_m = verify_pgp_keyring(email, timeout=smtp_timeout)
+                    if p_st == VerificationStatus.VALID:
+                        result.candidates.append(
+                            CandidateResult(
+                                email=email,
+                                pattern_name=pattern,
+                                status=VerificationStatus.VALID,
+                                smtp_code=200,
+                                smtp_message="Confirmed: Email verified via Public PGP Keyring (resolved catch-all)"
+                            )
+                        )
+                        resolved = True
+
+            if resolved:
+                continue
+
             result.candidates.append(
                 CandidateResult(
                     email=email,
