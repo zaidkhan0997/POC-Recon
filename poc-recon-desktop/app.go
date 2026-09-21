@@ -99,8 +99,8 @@ func computeConfidence(status models.VerificationStatus, pattern string, provide
 
 // RunRecon executes the email intelligence workflow and streams progress events
 func (a *App) RunRecon(req ReconRequest) (*models.ReconResult, error) {
-	if strings.TrimSpace(req.Website) == "" || strings.TrimSpace(req.Name) == "" {
-		return nil, fmt.Errorf("website domain and person name are required")
+	if strings.TrimSpace(req.Website) == "" || strings.TrimSpace(req.Name) == "" || strings.TrimSpace(req.PersonLinkedIn) == "" || strings.TrimSpace(req.CompanyLinkedIn) == "" {
+		return nil, fmt.Errorf("website domain, person name, person LinkedIn URL, and company LinkedIn URL are all required")
 	}
 
 	a.emitProgress("init", "Normalizing target domain and person name...", 10)

@@ -26,8 +26,8 @@ document.addEventListener("DOMContentLoaded", () => {
         const proxy = document.getElementById("input-proxy").value.trim();
         const noVerify = document.getElementById("check-no-verify").checked;
 
-        if (!website || !name) {
-            showToast("Please provide both website and person name.");
+        if (!website || !name || !personLi || !companyLi) {
+            showToast("Please provide website, person name, person LinkedIn URL, and company LinkedIn URL.");
             return;
         }
 
