@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>POC-Recon — Business Email Intelligence Suite</title>
+    <link rel="stylesheet" href="main.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+</head>
+<body>
+    <div class="app-shell">
+        <!-- Header -->
+        <header class="top-nav">
+            <div class="brand">
+                <div class="logo-badge">⚡</div>
+                <div>
+                    <h1 class="brand-title">POC-RECON</h1>
+                    <span class="brand-subtitle">Business Email Intelligence & Deliverability Suite</span>
+                </div>
+            </div>
+            <div class="nav-actions">
+                <button id="btn-results-folder" class="btn-secondary" title="Open local results/ folder">
+                    📁 Open Results Folder
+                </button>
+                <div class="status-indicator">
+                    <span class="pulse-dot"></span>
+                    <span id="engine-status">Engine Ready</span>
+                </div>
+            </div>
+        </header>
+
+        <!-- Main Content Area -->
+        <main class="content-container">
+            <!-- Target Input Form -->
+            <section class="card input-card">
+                <div class="card-header">
+                    <h2>🎯 Target Investigation</h2>
+                    <span class="hint">Discover & verify working enterprise contact addresses</span>
+                </div>
+                
+                <form id="recon-form">
+                    <div class="form-grid">
+                        <div class="form-group">
+                            <label for="input-website">Target Company Website / Domain <span class="required">*</span></label>
+                            <input type="text" id="input-website" placeholder="e.g. verawholehealth.com or acme.corp" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="input-name">Target Person's Full Name <span class="required">*</span></label>
+                            <input type="text" id="input-name" placeholder="e.g. Dean Black or Dr. Jane Doe, MBA" required>
+                        </div>
+                    </div>
+
+                    <!-- Collapsible Advanced Options -->
+                    <details class="advanced-drawer">
+                        <summary>⚙ Advanced Options (Proxy, LinkedIn, Offline)</summary>
+                        <div class="advanced-grid">
+                            <div class="form-group">
+                                <label for="input-person-li">Person LinkedIn URL (Optional)</label>
+                                <input type="text" id="input-person-li" placeholder="https://linkedin.com/in/username">
+                            </div>
+                            <div class="form-group">
+                                <label for="input-company-li">Company LinkedIn URL (Optional)</label>
+                                <input type="text" id="input-company-li" placeholder="https://linkedin.com/company/name">
+                            </div>
+                            <div class="form-group">
+                                <label for="input-proxy">SOCKS5 Proxy URL (Optional)</label>
+                                <input type="text" id="input-proxy" placeholder="socks5://127.0.0.1:1080">
+                            </div>
+                            <div class="form-group checkbox-group">
+                                <label class="checkbox-label">
+                                    <input type="checkbox" id="check-no-verify">
+                                    <span>Offline Mode (Generate corporate permutations without network verification)</span>
+                                </label>
+                            </div>
+                        </div>
+                    </details>
+
+                    <div class="form-actions">
+                        <button type="submit" id="btn-start" class="btn-primary">
+                            <span>🚀 Start Reconnaissance</span>
+                        </button>
+                    </div>
+                </form>
+            </section>
+
+            <!-- Progress Card (Visible during scan) -->
+            <section id="progress-card" class="card progress-card hidden">
+                <div class="progress-header">
+                    <span id="progress-message">Initializing scan...</span>
+                    <span id="progress-percentage" class="percentage-pill">0%</span>
+                </div>
+                <div class="progress-bar-track">
+                    <div id="progress-bar-fill" class="progress-bar-fill" style="width: 0%;"></div>
+                </div>
+            </section>
+
+            <!-- Results Section (Visible after scan) -->
+            <section id="results-section" class="results-section hidden">
+                <!-- 🎯 Primary Working Email Hero Spotlight -->
+                <div class="hero-spotlight-card">
+                    <div class="hero-top">
+                        <span class="hero-badge">🎯 Primary Working Email Found</span>
+                        <span id="hero-confidence" class="hero-conf-badge">95% Confidence</span>
+                    </div>
+                    <div class="hero-body">
+                        <div>
+                            <div id="hero-email" class="hero-email-address">user@example.com</div>
+                            <div class="hero-metadata">
+                                <span>Target: <strong id="hero-target-name">Name</strong></span>
+                                <span>Pattern: <code id="hero-pattern">first.last</code></span>
+                                <span>Status: <span id="hero-status" class="badge badge-valid">CONFIRMED VALID</span></span>
+                            </div>
+                            <div id="hero-diag" class="hero-diagnostics">Mailbox verified deliverable</div>
+                        </div>
+                        <button id="btn-copy-hero" class="btn-copy-hero">
+                            📋 Copy Working Email
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Domain Overview Grid -->
+                <div class="overview-grid">
+                    <div class="metric-card">
+                        <span class="metric-label">Target Domain</span>
+                        <span id="res-domain" class="metric-value">-</span>
+                    </div>
+                    <div class="metric-card">
+                        <span class="metric-label">Mail Provider</span>
+                        <span id="res-provider" class="metric-value">-</span>
+                    </div>
+                    <div class="metric-card">
+                        <span class="metric-label">Primary MX Host</span>
+                        <span id="res-mx" class="metric-value code-font">-</span>
+                    </div>
+                    <div class="metric-card">
+                        <span class="metric-label">Port 25 (SMTP)</span>
+                        <span id="res-port25" class="metric-value">-</span>
+                    </div>
+                </div>
+
+                <!-- All Candidate Permutations Drawer -->
+                <div class="card table-card">
+                    <div class="table-header">
+                        <div>
+                            <h3>Evaluated Permutations</h3>
+                            <span id="table-summary" class="table-summary-text">11 permutations evaluated</span>
+                        </div>
+                        <div class="table-controls">
+                            <input type="text" id="table-search" placeholder="🔍 Filter permutations..." class="search-input">
+                            <button id="btn-toggle-table" class="btn-toggle">Show All Permutations</button>
+                        </div>
+                    </div>
+
+                    <div id="table-wrapper" class="table-wrapper hidden">
+                        <table id="candidates-table">
+                            <thead>
+                                <tr>
+                                    <th>#</th>
+                                    <th>Candidate Email</th>
+                                    <th>Pattern</th>
+                                    <th>Confidence</th>
+                                    <th>Status</th>
+                                    <th>SMTP Code</th>
+                                    <th>Diagnostics</th>
+                                </tr>
+                            </thead>
+                            <tbody id="candidates-tbody">
+                                <!-- Dynamic rows inserted via JS -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- Results Export Actions -->
+                <div class="export-banner">
+                    <div class="export-info">
+                        <span class="export-check">✔</span>
+                        <div>
+                            <strong>Scan results automatically persisted to:</strong>
+                            <div id="export-paths" class="export-file-list">results/ folder</div>
+                        </div>
+                    </div>
+                    <div class="export-buttons">
+                        <button id="btn-open-report-web" class="btn-secondary">
+                            🌐 View Interactive HTML Report
+                        </button>
+                        <button id="btn-open-folder-action" class="btn-secondary">
+                            📁 Open Folder in File Manager
+                        </button>
+                    </div>
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <!-- Notification Toast -->
+    <div id="toast" class="toast hidden">Copied to clipboard!</div>
+
+    <script src="main.js"></script>
+</body>
+</html>

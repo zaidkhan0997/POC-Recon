@@ -1,0 +1,10 @@
+{
+  "$schema": "https://wails.io/schemas/config.v2.json",
+  "name": "poc-recon-desktop",
+  "outputfilename": "poc-recon-desktop",
+  "wailsjsdir": "./frontend",
+  "author": {
+    "name": "zaidkhan0997",
+    "email": "kzaid0997@gmail.com"
+  }
+}
