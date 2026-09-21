@@ -12,7 +12,9 @@ env/
 # Distribution / packaging
 build/
 dist/
+out/
 *.egg-info/
+poc-recon-go/bin/
 
 # Unit test / coverage
 .pytest_cache/

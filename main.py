@@ -388,6 +388,9 @@ def main() -> None:
             console.print(f"[bold green]Opening website in browser:[/bold green] [cyan]{web_url}[/cyan]")
             webbrowser.open(web_url)
 
+    if is_interactive:
+        Prompt.ask("\n[dim]Press Enter to exit...[/dim]", default="")
+
 
 if __name__ == "__main__":
     main()
