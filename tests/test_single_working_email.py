@@ -25,27 +25,27 @@ class TestSingleWorkingEmail(unittest.TestCase):
         self.assertEqual(conf, 95)
 
     def test_get_primary_candidate_picks_valid(self):
-        person = NameParts(first_name="Dean", last_name="Black", raw_name="Dean Black")
-        result = ReconResult(target_domain="verawholehealth.com", person=person)
-        c1 = CandidateResult(email="dean.black@verawholehealth.com", pattern_name="first.last", status=VerificationStatus.UNVERIFIED_PORT_BLOCKED, confidence=95)
-        c2 = CandidateResult(email="dblack@verawholehealth.com", pattern_name="flast", status=VerificationStatus.VALID, confidence=100)
+        person = NameParts(first_name="Jane", last_name="Doe", raw_name="Jane Doe")
+        result = ReconResult(target_domain="example.com", person=person)
+        c1 = CandidateResult(email="jane.doe@example.com", pattern_name="first.last", status=VerificationStatus.UNVERIFIED_PORT_BLOCKED, confidence=95)
+        c2 = CandidateResult(email="jdoe@example.com", pattern_name="flast", status=VerificationStatus.VALID, confidence=100)
         result.candidates = [c1, c2]
 
         best = result.get_primary_candidate()
         self.assertIsNotNone(best)
-        self.assertEqual(best.email, "dblack@verawholehealth.com")
+        self.assertEqual(best.email, "jdoe@example.com")
 
     def test_get_primary_candidate_picks_highest_confidence_when_unverified(self):
-        person = NameParts(first_name="Dean", last_name="Black", raw_name="Dean Black")
-        result = ReconResult(target_domain="verawholehealth.com", person=person)
-        c1 = CandidateResult(email="dean.black@verawholehealth.com", pattern_name="first.last", status=VerificationStatus.UNVERIFIED_PORT_BLOCKED, confidence=95)
-        c2 = CandidateResult(email="dean@verawholehealth.com", pattern_name="first", status=VerificationStatus.UNVERIFIED_PORT_BLOCKED, confidence=60)
-        c3 = CandidateResult(email="dblack@verawholehealth.com", pattern_name="flast", status=VerificationStatus.UNVERIFIED_PORT_BLOCKED, confidence=50)
+        person = NameParts(first_name="Jane", last_name="Doe", raw_name="Jane Doe")
+        result = ReconResult(target_domain="example.com", person=person)
+        c1 = CandidateResult(email="jane.doe@example.com", pattern_name="first.last", status=VerificationStatus.UNVERIFIED_PORT_BLOCKED, confidence=95)
+        c2 = CandidateResult(email="jane@example.com", pattern_name="first", status=VerificationStatus.UNVERIFIED_PORT_BLOCKED, confidence=60)
+        c3 = CandidateResult(email="jdoe@example.com", pattern_name="flast", status=VerificationStatus.UNVERIFIED_PORT_BLOCKED, confidence=50)
         result.candidates = [c1, c2, c3]
 
         best = result.get_primary_candidate()
         self.assertIsNotNone(best)
-        self.assertEqual(best.email, "dean.black@verawholehealth.com")
+        self.assertEqual(best.email, "jane.doe@example.com")
         self.assertEqual(best.confidence, 95)
 
     @patch("verifier.check_port_25_connectivity", return_value=True)
@@ -59,11 +59,11 @@ class TestSingleWorkingEmail(unittest.TestCase):
             (VerificationStatus.INVALID, 550, "5.1.1 User unknown"),
         ]
 
-        person = NameParts(first_name="Dean", last_name="Black", raw_name="Dean Black")
+        person = NameParts(first_name="Jane", last_name="Doe", raw_name="Jane Doe")
         candidates = [
-            ("dean.black@example.com", "first.last"),
-            ("dean@example.com", "first"),
-            ("dblack@example.com", "flast")
+            ("jane.doe@example.com", "first.last"),
+            ("jane@example.com", "first"),
+            ("jdoe@example.com", "flast")
         ]
 
         result = run_verification(
@@ -75,7 +75,7 @@ class TestSingleWorkingEmail(unittest.TestCase):
 
         # Should have stopped after candidate 1 because it was VALID
         self.assertEqual(len(result.candidates), 1)
-        self.assertEqual(result.best_candidate.email, "dean.black@example.com")
+        self.assertEqual(result.best_candidate.email, "jane.doe@example.com")
         self.assertEqual(result.best_candidate.status, VerificationStatus.VALID)
 
 

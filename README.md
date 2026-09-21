@@ -164,8 +164,8 @@ chmod +x poc-recon
 
 ### Desktop GUI Application
 Simply launch the desktop software executable:
-1. Enter the target domain (e.g. `stripe.com`) and person's name (e.g. `Patrick Collison`).
-2. Enter the person's LinkedIn URL (e.g. `https://www.linkedin.com/in/patrickcollison`) and company LinkedIn URL (e.g. `https://www.linkedin.com/company/stripe`).
+1. Enter the target domain (e.g. `example.com`) and person's name (e.g. `Jane Doe`).
+2. Enter the person's LinkedIn URL (e.g. `https://www.linkedin.com/in/jane-doe`) and company LinkedIn URL (e.g. `https://www.linkedin.com/company/example`).
 3. Click **"Start Reconnaissance"**.
 4. Watch real-time stage updates and copy the verified working email from the **Primary Email Hero Card**.
 5. Click **"Open Visual Report"** to view the saved interactive HTML dashboard in your browser.
@@ -232,7 +232,12 @@ poc-recon --website "example.com" --name "Jane Doe" --all
 If your current network blocks Port 25 or you only want to generate corporate email combinations and inspect DNS records without initiating SMTP network connections:
 
 ```bash
-poc-recon --website "github.com" --name "Nat Friedman" --no-verify
+poc-recon \
+  --website "example.com" \
+  --name "Jane Doe" \
+  --person-linkedin "https://www.linkedin.com/in/jane-doe" \
+  --company-linkedin "https://www.linkedin.com/company/example" \
+  --no-verify
 ```
 
 ---
