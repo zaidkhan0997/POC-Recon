@@ -239,10 +239,10 @@ def main() -> None:
     parser = argparse.ArgumentParser(
         description="POC-Recon: Discover and verify corporate business email addresses using pattern generation and DNS/SMTP verification."
     )
-    parser.add_argument("--website", "-w", help="Target company website URL or domain (e.g. example.com or https://example.com)")
-    parser.add_argument("--name", "-n", help="Target person's full name (e.g. 'Jane Doe' or 'Dr. John C. Smith, PhD')")
-    parser.add_argument("--company-linkedin", help="Company LinkedIn URL (reference only)")
-    parser.add_argument("--person-linkedin", help="Target person's LinkedIn profile URL (used for slug name fallback)")
+    parser.add_argument("--website", "-w", help="Target company website URL or domain (e.g. example.com or https://example.com) [REQUIRED]")
+    parser.add_argument("--name", "-n", help="Target person's full name (e.g. 'Jane Doe' or 'Dr. John C. Smith, PhD') [REQUIRED]")
+    parser.add_argument("--person-linkedin", help="Target person's LinkedIn profile URL (e.g. https://www.linkedin.com/in/jane-doe) [REQUIRED]")
+    parser.add_argument("--company-linkedin", help="Target company's LinkedIn URL (e.g. https://www.linkedin.com/company/example) [REQUIRED]")
     parser.add_argument("--proxy", help="SOCKS5 proxy URL to bypass Port 25 blocks (e.g. socks5://127.0.0.1:1080)")
     parser.add_argument("--dns-timeout", type=float, default=5.0, help="DNS resolution timeout in seconds (default: 5.0)")
     parser.add_argument("--smtp-timeout", type=float, default=8.0, help="SMTP connection timeout in seconds (default: 8.0)")
@@ -259,12 +259,15 @@ def main() -> None:
     setup_logging(debug=args.debug)
     display_banner()
 
-    is_interactive = not bool(args.website and (args.name or args.person_linkedin))
+    is_interactive = not bool(args.website and args.name and args.person_linkedin and args.company_linkedin)
 
     # Interactive Prompt Flow
-    website = args.website
+    website = (args.website or "").strip()
     if not website:
-        website = Prompt.ask("[bold cyan]1. Enter Target Company Website URL or Domain[/bold cyan] [dim](e.g. example.com or https://company.com)[/dim]")
+        while not website:
+            website = Prompt.ask("[bold cyan]1. Enter Target Company Website URL or Domain *[/bold cyan] [dim](e.g. example.com or https://company.com)[/dim]").strip()
+            if not website:
+                console.print("[bold red]Error: Target company website / domain is required.[/bold red]")
 
     try:
         domain = normalize_domain(website)
@@ -272,30 +275,37 @@ def main() -> None:
         console.print(f"[bold red]Error:[/bold red] {e}")
         sys.exit(1)
 
-    name_str = args.name
-    person_linkedin = args.person_linkedin
-    company_linkedin = args.company_linkedin
+    name_str = (args.name or "").strip()
+    person_linkedin = (args.person_linkedin or "").strip()
+    company_linkedin = (args.company_linkedin or "").strip()
 
     if is_interactive:
         if not name_str:
-            name_str = Prompt.ask("[bold cyan]2. Enter Target Person's Full Name[/bold cyan] [dim](e.g. 'Jane Doe', or leave blank if using LinkedIn)[/dim]", default="")
-            if not name_str.strip():
-                name_str = None
+            while not name_str:
+                name_str = Prompt.ask("[bold cyan]2. Enter Target Person's Full Name *[/bold cyan] [dim](e.g. 'Jane Doe')[/dim]").strip()
+                if not name_str:
+                    console.print("[bold red]Error: Target person name is required.[/bold red]")
 
         if not person_linkedin:
-            person_linkedin = Prompt.ask("[bold cyan]3. Enter Person's LinkedIn Profile URL (Optional)[/bold cyan] [dim](e.g. https://www.linkedin.com/in/jane-doe-12345)[/dim]", default="")
-            if not person_linkedin.strip():
-                person_linkedin = None
+            while not person_linkedin:
+                person_linkedin = Prompt.ask("[bold cyan]3. Enter Target Person's LinkedIn URL *[/bold cyan] [dim](e.g. https://www.linkedin.com/in/jane-doe-12345)[/dim]").strip()
+                if not person_linkedin:
+                    console.print("[bold red]Error: Person LinkedIn URL is required.[/bold red]")
 
         if not company_linkedin:
-            company_linkedin = Prompt.ask("[bold cyan]4. Enter Company LinkedIn URL (Optional)[/bold cyan] [dim](e.g. https://www.linkedin.com/company/example)[/dim]", default="")
-            if not company_linkedin.strip():
-                company_linkedin = None
+            while not company_linkedin:
+                company_linkedin = Prompt.ask("[bold cyan]4. Enter Target Company LinkedIn URL *[/bold cyan] [dim](e.g. https://www.linkedin.com/company/example)[/dim]").strip()
+                if not company_linkedin:
+                    console.print("[bold red]Error: Company LinkedIn URL is required.[/bold red]")
 
         if not args.no_verify:
             run_live = Prompt.ask("[bold cyan]5. Run Live SMTP Verification?[/bold cyan] [dim](y: live DNS & SMTP, n: offline pattern dry-run)[/dim]", choices=["y", "n"], default="y")
             if run_live.lower() == "n":
                 args.no_verify = True
+
+    if not website or not name_str or not person_linkedin or not company_linkedin:
+        console.print("[bold red]Error:[/bold red] All 4 target fields are required: --website, --name, --person-linkedin, and --company-linkedin.")
+        sys.exit(1)
 
     # Parse Person Name
     person: Optional[NameParts] = None
