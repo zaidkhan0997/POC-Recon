@@ -2,6 +2,7 @@ package main
 
 import (
 	"embed"
+	"os"
 
 	"github.com/wailsapp/wails/v2"
 	"github.com/wailsapp/wails/v2/pkg/options"
@@ -12,6 +13,13 @@ import (
 
 //go:embed all:frontend/src
 var assets embed.FS
+
+func init() {
+	// Prevent WebKitGTK DMA-BUF / Wayland compositor protocol crash on Linux (GNOME/KDE Wayland)
+	if os.Getenv("WEBKIT_DISABLE_DMABUF_RENDERER") == "" {
+		os.Setenv("WEBKIT_DISABLE_DMABUF_RENDERER", "1")
+	}
+}
 
 func main() {
 	app := NewApp()
@@ -40,7 +48,7 @@ func main() {
 		},
 		Linux: &linux.Options{
 			WindowIsTranslucent: false,
-			WebviewGpuPolicy:    linux.WebviewGpuPolicyAlways,
+			WebviewGpuPolicy:    linux.WebviewGpuPolicyOnDemand,
 		},
 	})
 
