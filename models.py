@@ -55,6 +55,7 @@ class CandidateResult:
     status: VerificationStatus
     smtp_code: Optional[int] = None
     smtp_message: Optional[str] = None
+    confidence: int = 0
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -63,6 +64,7 @@ class CandidateResult:
             "status": str(self.status),
             "smtp_code": self.smtp_code,
             "smtp_message": self.smtp_message,
+            "confidence": self.confidence,
         }
 
 
@@ -120,6 +122,7 @@ class ReconResult:
         if valid_candidates:
             return valid_candidates[0]
         if self.candidates:
-            return self.candidates[0]
+            # Sort by confidence descending
+            return max(self.candidates, key=lambda c: c.confidence)
         return None
 

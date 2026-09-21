@@ -1,3 +1,4 @@
+import hashlib
 import json
 import logging
 import socket
@@ -457,18 +458,99 @@ def verify_github_commits(email: str, timeout: float = 5.0) -> Tuple[Optional[Ve
         return None, None, f"GitHub search error: {e}"
 
 
+def compute_confidence(
+    status: VerificationStatus,
+    pattern: str,
+    provider: Optional[ProviderInfo] = None,
+    is_catch_all: bool = False,
+    port_25_open: bool = True
+) -> int:
+    """
+    Computes deliverability confidence score (0-100%) based on:
+    - Verified status (SMTP/Cloud Directory = 100%)
+    - Pattern popularity & corporate standards
+    - Mail provider defaults (Google Workspace / M365 favors first.last)
+    - SPF strictness (-all vs ~all)
+    - Catch-all discounting
+    """
+    if status == VerificationStatus.VALID:
+        return 100
+    if status in (VerificationStatus.INVALID, VerificationStatus.NO_MX_RECORD):
+        return 0
+
+    # Base statistical corporate distribution of email patterns
+    pattern_weights = {
+        "first.last": 85,
+        "first": 60,
+        "flast": 50,
+        "firstlast": 45,
+        "first_last": 40,
+        "last.first": 35,
+        "f.last": 30,
+        "last": 25,
+        "lfirst": 20,
+        "first.l": 20,
+        "f_last": 15,
+        "first.m.last": 25,
+        "firstmlast": 20,
+        "fmlast": 20,
+        "first.middle.last": 15,
+    }
+
+    score = pattern_weights.get(pattern, 15)
+
+    # Provider heuristics
+    if provider:
+        prov_name = provider.name.lower()
+        if any(p in prov_name for p in ["google", "workspace", "microsoft", "office", "exchange"]):
+            if pattern == "first.last":
+                score = min(score + 5, 95)
+        if provider.spf_record and "-all" in provider.spf_record:
+            score = min(score + 5, 95)
+
+    if is_catch_all:
+        score = int(score * 0.75)
+
+    return max(5, min(score, 99))
+
+
+def verify_gravatar_profile(email: str, timeout: float = 5.0) -> Tuple[Optional[VerificationStatus], Optional[int], str]:
+    """
+    Queries Gravatar avatar service over HTTPS (Port 443) using email MD5 hash.
+    If the email has a registered avatar profile, returns VALID.
+    """
+    try:
+        email_hash = hashlib.md5(email.strip().lower().encode("utf-8")).hexdigest()
+        url = f"https://www.gravatar.com/avatar/{email_hash}?d=404"
+        req = urllib.request.Request(
+            url,
+            headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) POC-Recon/1.0"}
+        )
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            if resp.status == 200:
+                return VerificationStatus.VALID, 200, "Confirmed: Active identity found on Gravatar/WordPress"
+    except urllib.error.HTTPError as e:
+        if e.code == 404:
+            return None, 404, "No Gravatar identity found"
+    except Exception as e:
+        logger.debug(f"Gravatar lookup error for {email}: {e}")
+    return None, None, ""
+
+
 def run_alternative_verification(
     candidates: List[Tuple[str, str]],
     domain: str,
     provider: Optional[ProviderInfo],
     timeout: float = 5.0,
-    delay: float = 0.3
+    delay: float = 0.3,
+    early_exit: bool = False
 ) -> List[CandidateResult]:
     """
-    Executes alternative HTTPS-based verification (M365 Cloud Directory, PGP Keyrings, GitHub Commits).
+    Executes alternative HTTPS-based verification (M365 Cloud Directory, Gravatar, PGP Keyrings, GitHub Commits).
     Runs completely over Port 443 (HTTPS) without Port 25 or external VPS requirements.
     """
     results: List[CandidateResult] = []
+    is_google = bool(provider and ("Google" in provider.name or "aspmx" in provider.details.lower()))
     is_m365 = bool(
         provider and (
             "Microsoft 365" in provider.name or
@@ -477,11 +559,11 @@ def run_alternative_verification(
         )
     )
 
-    # If provider wasn't explicitly detected as M365 by MX, check if domain is managed by M365:
-    if not is_m365 and candidates:
+    # Only probe M365 if provider is not already confirmed as Google Workspace or non-Microsoft
+    if not is_m365 and not is_google and candidates:
         sample_email = candidates[0][0]
         st, _, _ = verify_m365_cloud(sample_email, timeout=timeout)
-        if st in (VerificationStatus.VALID, VerificationStatus.INVALID):
+        if st == VerificationStatus.VALID:
             is_m365 = True
 
     for i, (email, pattern) in enumerate(candidates):
@@ -500,7 +582,15 @@ def run_alternative_verification(
                 code = m_code
                 msg = m_msg
 
-        # Step 2: If still not verified, check Public PGP Keyring
+        # Step 2: Gravatar Profile Check (Port 443)
+        if status != VerificationStatus.VALID:
+            g_status, g_code, g_msg = verify_gravatar_profile(email, timeout=timeout)
+            if g_status == VerificationStatus.VALID:
+                status = g_status
+                code = g_code
+                msg = g_msg
+
+        # Step 3: If still not verified, check Public PGP Keyring
         if status != VerificationStatus.VALID:
             p_status, p_code, p_msg = verify_pgp_keyring(email, timeout=timeout)
             if p_status == VerificationStatus.VALID:
@@ -508,13 +598,13 @@ def run_alternative_verification(
                 code = p_code
                 msg = p_msg
 
-        # Step 3: If still not verified, check GitHub Commits
+        # Step 4: If still not verified, check GitHub Commits
         if status != VerificationStatus.VALID:
-            g_status, g_code, g_msg = verify_github_commits(email, timeout=timeout)
-            if g_status == VerificationStatus.VALID:
-                status = g_status
-                code = g_code
-                msg = g_msg
+            gh_status, gh_code, gh_msg = verify_github_commits(email, timeout=timeout)
+            if gh_status == VerificationStatus.VALID:
+                status = gh_status
+                code = gh_code
+                msg = gh_msg
 
         # Fallback if no definitive status obtained
         if status is None:
@@ -522,15 +612,28 @@ def run_alternative_verification(
             code = None
             msg = "Port 25 blocked by ISP; HTTPS alternative checks non-conclusive"
 
-        results.append(
-            CandidateResult(
-                email=email,
-                pattern_name=pattern,
-                status=status,
-                smtp_code=code,
-                smtp_message=msg
-            )
+        conf = compute_confidence(
+            status=status,
+            pattern=pattern,
+            provider=provider,
+            is_catch_all=False,
+            port_25_open=False
         )
+
+        candidate_obj = CandidateResult(
+            email=email,
+            pattern_name=pattern,
+            status=status,
+            smtp_code=code,
+            smtp_message=msg,
+            confidence=conf
+        )
+        results.append(candidate_obj)
+
+        # Early exit if confirmed VALID and early_exit requested
+        if early_exit and status == VerificationStatus.VALID:
+            logger.info(f"Confirmed VALID email via cloud fallback: {email}")
+            break
 
     return results
 
@@ -553,7 +656,7 @@ def run_verification(
     2. Provider fingerprinting
     3. Pre-flight Port 25 connectivity check
     4. Catch-All probe
-    5. Candidate RCPT TO verification with rate-limiting
+    5. Candidate RCPT TO verification with early-exit on confirmed match
     """
     logger.info(f"Resolving MX records for {domain}...")
     mx_records = get_mx_records(domain, timeout=dns_timeout)
@@ -572,9 +675,11 @@ def run_verification(
                     email=email,
                     pattern_name=pattern,
                     status=VerificationStatus.NO_MX_RECORD,
-                    smtp_message="No mail server found in DNS"
+                    smtp_message="No mail server found in DNS",
+                    confidence=0
                 )
             )
+        result.best_candidate = result.get_primary_candidate()
         return result
 
     # Fingerprint provider
@@ -584,12 +689,20 @@ def run_verification(
     # Dry-run / pattern-only mode
     if dry_run:
         for email, pattern in candidates:
+            conf = compute_confidence(
+                status=VerificationStatus.SKIPPED,
+                pattern=pattern,
+                provider=provider,
+                is_catch_all=False,
+                port_25_open=result.port_25_open
+            )
             result.candidates.append(
                 CandidateResult(
                     email=email,
                     pattern_name=pattern,
                     status=VerificationStatus.SKIPPED,
-                    smtp_message="Verification skipped in dry-run mode"
+                    smtp_message="Verification skipped in dry-run mode",
+                    confidence=conf
                 )
             )
         result.best_candidate = result.get_primary_candidate()
@@ -612,20 +725,31 @@ def run_verification(
                 domain=domain,
                 provider=provider,
                 timeout=smtp_timeout,
-                delay=delay
+                delay=delay,
+                early_exit=early_exit
             )
+            result.best_candidate = result.get_primary_candidate()
             return result
         else:
             logger.warning("Port 25 is blocked or unreachable on current network.")
             for email, pattern in candidates:
+                conf = compute_confidence(
+                    status=VerificationStatus.UNVERIFIED_PORT_BLOCKED,
+                    pattern=pattern,
+                    provider=provider,
+                    is_catch_all=False,
+                    port_25_open=False
+                )
                 result.candidates.append(
                     CandidateResult(
                         email=email,
                         pattern_name=pattern,
                         status=VerificationStatus.UNVERIFIED_PORT_BLOCKED,
-                        smtp_message="Outbound TCP port 25 blocked by local ISP or cloud firewall"
+                        smtp_message="Outbound TCP port 25 blocked by local ISP or cloud firewall",
+                        confidence=conf
                     )
                 )
+            result.best_candidate = result.get_primary_candidate()
             return result
 
     # Catch-all detection
@@ -638,10 +762,10 @@ def run_verification(
     if is_catch_all:
         logger.warning("Domain is configured as Catch-All. Mailbox validity cannot be strictly confirmed.")
 
-    # Candidate verification
+    # Candidate verification with early-exit
     for i, (email, pattern) in enumerate(candidates):
         if is_catch_all:
-            # Attempt HTTPS cloud resolution for catch-all domains (e.g. Microsoft 365 or PGP)
+            # Attempt HTTPS cloud resolution for catch-all domains (e.g. Microsoft 365, Gravatar, or PGP)
             resolved = False
             if cloud_fallback:
                 is_m365 = bool(
@@ -660,7 +784,8 @@ def run_verification(
                                 pattern_name=pattern,
                                 status=VerificationStatus.VALID,
                                 smtp_code=200,
-                                smtp_message="Confirmed: Mailbox exists in Microsoft 365 tenant (resolved catch-all)"
+                                smtp_message="Confirmed: Mailbox exists in Microsoft 365 tenant (resolved catch-all)",
+                                confidence=100
                             )
                         )
                         resolved = True
@@ -671,7 +796,23 @@ def run_verification(
                                 pattern_name=pattern,
                                 status=VerificationStatus.INVALID,
                                 smtp_code=404,
-                                smtp_message="Recipient not found in Microsoft 365 tenant (resolved catch-all)"
+                                smtp_message="Recipient not found in Microsoft 365 tenant (resolved catch-all)",
+                                confidence=0
+                            )
+                        )
+                        resolved = True
+
+                if not resolved:
+                    gv_st, gv_cd, gv_m = verify_gravatar_profile(email, timeout=smtp_timeout)
+                    if gv_st == VerificationStatus.VALID:
+                        result.candidates.append(
+                            CandidateResult(
+                                email=email,
+                                pattern_name=pattern,
+                                status=VerificationStatus.VALID,
+                                smtp_code=200,
+                                smtp_message="Confirmed: Active identity found on Gravatar (resolved catch-all)",
+                                confidence=100
                             )
                         )
                         resolved = True
@@ -685,21 +826,33 @@ def run_verification(
                                 pattern_name=pattern,
                                 status=VerificationStatus.VALID,
                                 smtp_code=200,
-                                smtp_message="Confirmed: Email verified via Public PGP Keyring (resolved catch-all)"
+                                smtp_message="Confirmed: Email verified via Public PGP Keyring (resolved catch-all)",
+                                confidence=100
                             )
                         )
                         resolved = True
 
             if resolved:
+                if result.candidates[-1].status == VerificationStatus.VALID:
+                    result.best_candidate = result.candidates[-1]
+                    break
                 continue
 
+            conf = compute_confidence(
+                status=VerificationStatus.CATCH_ALL_UNVERIFIED,
+                pattern=pattern,
+                provider=provider,
+                is_catch_all=True,
+                port_25_open=True
+            )
             result.candidates.append(
                 CandidateResult(
                     email=email,
                     pattern_name=pattern,
                     status=VerificationStatus.CATCH_ALL_UNVERIFIED,
                     smtp_code=ca_code,
-                    smtp_message="Server accepts all recipients (Catch-All)"
+                    smtp_message="Server accepts all recipients (Catch-All)",
+                    confidence=conf
                 )
             )
             continue
@@ -715,22 +868,30 @@ def run_verification(
             proxy_url=proxy_url
         )
 
+        conf = compute_confidence(
+            status=status,
+            pattern=pattern,
+            provider=provider,
+            is_catch_all=False,
+            port_25_open=True
+        )
+
         result.candidates.append(
             CandidateResult(
                 email=email,
                 pattern_name=pattern,
                 status=status,
                 smtp_code=code,
-                smtp_message=msg
+                smtp_message=msg,
+                confidence=conf
             )
         )
 
-        # If we successfully found a confirmed VALID email, we log it
-        if status == VerificationStatus.VALID:
+        # Early exit on confirmed VALID email
+        if early_exit and status == VerificationStatus.VALID:
             logger.info(f"Found VALID email: {email}")
-            if early_exit:
-                result.best_candidate = result.candidates[-1]
-                break
+            result.best_candidate = result.candidates[-1]
+            break
 
     if not result.best_candidate:
         result.best_candidate = result.get_primary_candidate()

@@ -140,6 +140,7 @@ def export_results_txt(
         "-" * 78,
         "🎯 PRIMARY WORKING EMAIL:",
         f"Working Email      : {result.get_primary_candidate().email if result.get_primary_candidate() else 'None'}",
+        f"Confidence Score   : {result.get_primary_candidate().confidence if result.get_primary_candidate() else 0}%",
         f"Pattern Format     : {result.get_primary_candidate().pattern_name if result.get_primary_candidate() else 'N/A'}",
         f"Verification Status: [{result.get_primary_candidate().status if result.get_primary_candidate() else 'N/A'}]",
         f"Diagnostics / Note : {(result.get_primary_candidate().smtp_message if result.get_primary_candidate() else None) or 'Standard provider pattern'}",
@@ -193,6 +194,7 @@ def export_results_html(
         <div class="primary-hero-card" style="background: linear-gradient(135deg, rgba(16, 185, 129, 0.15) 0%, rgba(59, 130, 246, 0.12) 100%); border: 2px solid var(--accent-emerald); border-radius: 12px; padding: 24px; margin-bottom: 28px; box-shadow: 0 10px 25px -5px rgba(16, 185, 129, 0.2);">
             <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; flex-wrap: wrap; gap: 8px;">
                 <span style="font-weight: 700; font-size: 14px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--accent-emerald);">🎯 Primary Working Email Found</span>
+                <span class="confidence-badge" style="background: rgba(59, 130, 246, 0.2); border: 1px solid var(--accent-blue); color: var(--accent-blue); font-weight: 700; font-size: 12px; padding: 4px 10px; border-radius: 9999px;">{primary_cand.confidence}% Confidence</span>
             </div>
             <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 16px;">
                 <div>

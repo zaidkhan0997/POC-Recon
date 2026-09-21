@@ -28,6 +28,7 @@ type EmailCandidate struct {
 	Status      VerificationStatus `json:"status"`
 	SMTPCode    *int               `json:"smtp_code,omitempty"`
 	SMTPMessage string             `json:"smtp_message,omitempty"`
+	Confidence  int                `json:"confidence"`
 }
 
 type MXRecord struct {
@@ -74,7 +75,13 @@ func (r *ReconResult) GetPrimaryCandidate() *EmailCandidate {
 		}
 	}
 	if len(r.Candidates) > 0 {
-		return &r.Candidates[0]
+		best := &r.Candidates[0]
+		for i := range r.Candidates {
+			if r.Candidates[i].Confidence > best.Confidence {
+				best = &r.Candidates[i]
+			}
+		}
+		return best
 	}
 	return nil
 }

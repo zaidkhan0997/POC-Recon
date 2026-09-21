@@ -50,6 +50,53 @@ func openBrowser(url string) {
 	_ = cmd.Start()
 }
 
+func computeConfidence(status models.VerificationStatus, pattern string, provider *models.ProviderInfo, isCatchAll bool, port25Open bool) int {
+	if status == models.StatusValid {
+		return 100
+	}
+	if status == models.StatusInvalid || status == models.StatusNoMX {
+		return 0
+	}
+	weights := map[string]int{
+		"first.last": 85,
+		"first":      60,
+		"flast":      50,
+		"firstlast":  45,
+		"first_last": 40,
+		"last.first": 35,
+		"f.last":     30,
+		"last":       25,
+		"lfirst":     20,
+		"first.l":    20,
+		"f_last":     15,
+	}
+	score, ok := weights[pattern]
+	if !ok {
+		score = 15
+	}
+	if provider != nil {
+		pLower := strings.ToLower(provider.Name)
+		if strings.Contains(pLower, "google") || strings.Contains(pLower, "workspace") || strings.Contains(pLower, "microsoft") {
+			if pattern == "first.last" {
+				score += 5
+			}
+		}
+		if strings.Contains(provider.SPFRecord, "-all") {
+			score += 5
+		}
+	}
+	if isCatchAll {
+		score = int(float64(score) * 0.75)
+	}
+	if score > 95 {
+		score = 95
+	}
+	if score < 5 {
+		score = 5
+	}
+	return score
+}
+
 func main() {
 	websiteFlag := flag.String("website", "", "Target company website URL or domain (e.g. example.com)")
 	flag.StringVar(websiteFlag, "w", "", "Short alias for -website")
@@ -142,21 +189,25 @@ func main() {
 		for i := range result.Candidates {
 			result.Candidates[i].Status = models.StatusNoMX
 			result.Candidates[i].SMTPMessage = "No MX record in DNS"
+			result.Candidates[i].Confidence = 0
 		}
 	} else if *noVerifyFlag {
 		for i := range result.Candidates {
 			result.Candidates[i].Status = models.StatusUnverified
 			result.Candidates[i].SMTPMessage = "Verification skipped (--no-verify)"
+			result.Candidates[i].Confidence = computeConfidence(models.StatusUnverified, result.Candidates[i].PatternName, provider, isCatchAll, port25Open)
 		}
 	} else if !port25Open {
 		for i := range result.Candidates {
 			result.Candidates[i].Status = models.StatusPortBlocked
 			result.Candidates[i].SMTPMessage = "Port 25 blocked by ISP or firewall"
+			result.Candidates[i].Confidence = computeConfidence(models.StatusPortBlocked, result.Candidates[i].PatternName, provider, isCatchAll, port25Open)
 		}
 	} else if isCatchAll {
 		for i := range result.Candidates {
 			result.Candidates[i].Status = models.StatusCatchAll
 			result.Candidates[i].SMTPMessage = "Mail server accepts all probes (Catch-All)"
+			result.Candidates[i].Confidence = computeConfidence(models.StatusCatchAll, result.Candidates[i].PatternName, provider, isCatchAll, port25Open)
 		}
 	} else {
 		primaryMX := mxList[0].Host
@@ -166,6 +217,7 @@ func main() {
 			result.Candidates[i].Status = status
 			result.Candidates[i].SMTPCode = code
 			result.Candidates[i].SMTPMessage = msg
+			result.Candidates[i].Confidence = computeConfidence(status, result.Candidates[i].PatternName, provider, isCatchAll, port25Open)
 			time.Sleep(300 * time.Millisecond) // Polite delay
 		}
 	}

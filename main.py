@@ -104,13 +104,17 @@ def display_results_table(result: ReconResult) -> None:
         if best.status == VerificationStatus.VALID:
             stat_style = "[bold green]CONFIRMED VALID (100% Deliverable)[/bold green]"
             panel_border = "green"
-        else:
-            stat_style = f"[{panel_color(best.status)}]{best.status}[/{panel_color(best.status)}]"
+        elif best.confidence >= 80:
+            stat_style = f"[bold cyan]HIGH CONFIDENCE ({best.confidence}%) - Standard Provider Pattern[/bold cyan]"
             panel_border = "cyan"
+        else:
+            stat_style = f"[yellow]Calculated Candidate ({best.confidence}% confidence)[/yellow]"
+            panel_border = "yellow"
 
         diag = best.smtp_message or "Standard corporate pattern match"
         hero_text = f"""[bold white]Target Person :[/bold white] [bold]{result.person.full_name}[/bold]
 [bold white]Working Email :[/bold white] [bold green]{best.email}[/bold green]
+[bold white]Confidence    :[/bold white] [bold cyan]{best.confidence}%[/bold cyan]
 [bold white]Pattern Format:[/bold white] [magenta]{best.pattern_name}[/magenta]
 [bold white]Status        :[/bold white] {stat_style}
 [bold white]Diagnostics   :[/bold white] [dim]{diag}[/dim]"""
@@ -179,6 +183,7 @@ def display_simple_text_summary(
     if best:
         text_output.append("🎯 PRIMARY WORKING EMAIL:")
         text_output.append(f"Email     : {best.email}")
+        text_output.append(f"Confidence: {best.confidence}%")
         text_output.append(f"Pattern   : {best.pattern_name}")
         text_output.append(f"Status    : [{best.status}]")
         text_output.append(f"Notes     : {best.smtp_message or 'Standard provider pattern'}")
