@@ -102,11 +102,14 @@ func computeConfidence(status models.VerificationStatus, pattern string, provide
 }
 
 func main() {
-	websiteFlag := flag.String("website", "", "Target company website URL or domain (e.g. example.com)")
+	websiteFlag := flag.String("website", "", "Target company website URL or domain (e.g. example.com) [REQUIRED]")
 	flag.StringVar(websiteFlag, "w", "", "Short alias for -website")
 
-	nameFlag := flag.String("name", "", "Target person's full name (e.g. 'Jane Doe')")
+	nameFlag := flag.String("name", "", "Target person's full name (e.g. 'Jane Doe') [REQUIRED]")
 	flag.StringVar(nameFlag, "n", "", "Short alias for -name")
+
+	personLIFlag := flag.String("person-linkedin", "", "Target person's LinkedIn URL (e.g. https://linkedin.com/in/jane-doe) [REQUIRED]")
+	companyLIFlag := flag.String("company-linkedin", "", "Target company's LinkedIn URL (e.g. https://linkedin.com/company/example) [REQUIRED]")
 
 	proxyFlag := flag.String("proxy", "", "SOCKS5 proxy URL (e.g. socks5://127.0.0.1:1080)")
 	noVerifyFlag := flag.Bool("no-verify", false, "Generate patterns and DNS intel without SMTP probes")
@@ -120,25 +123,37 @@ func main() {
 
 	printBanner()
 
-	rawDomain := *websiteFlag
-	rawName := *nameFlag
+	rawDomain := strings.TrimSpace(*websiteFlag)
+	rawName := strings.TrimSpace(*nameFlag)
+	rawPersonLI := strings.TrimSpace(*personLIFlag)
+	rawCompanyLI := strings.TrimSpace(*companyLIFlag)
 
-	if rawDomain == "" || rawName == "" {
+	if rawDomain == "" || rawName == "" || rawPersonLI == "" || rawCompanyLI == "" {
 		isInteractive = true
 		if rawDomain == "" {
-			fmt.Printf("%s[?] Enter target company website / domain (e.g. acme.com): %s", colorCyan, colorReset)
+			fmt.Printf("%s[?] 1. Enter target company website / domain (e.g. acme.com) *: %s", colorCyan, colorReset)
 			line, _ := reader.ReadString('\n')
 			rawDomain = strings.TrimSpace(line)
 		}
 		if rawName == "" {
-			fmt.Printf("%s[?] Enter contact person full name (e.g. Jane Doe): %s", colorCyan, colorReset)
+			fmt.Printf("%s[?] 2. Enter contact person full name (e.g. Jane Doe) *: %s", colorCyan, colorReset)
 			line, _ := reader.ReadString('\n')
 			rawName = strings.TrimSpace(line)
 		}
+		if rawPersonLI == "" {
+			fmt.Printf("%s[?] 3. Enter target person LinkedIn URL (e.g. https://linkedin.com/in/jane-doe) *: %s", colorCyan, colorReset)
+			line, _ := reader.ReadString('\n')
+			rawPersonLI = strings.TrimSpace(line)
+		}
+		if rawCompanyLI == "" {
+			fmt.Printf("%s[?] 4. Enter target company LinkedIn URL (e.g. https://linkedin.com/company/example) *: %s", colorCyan, colorReset)
+			line, _ := reader.ReadString('\n')
+			rawCompanyLI = strings.TrimSpace(line)
+		}
 	}
 
-	if rawDomain == "" || rawName == "" {
-		fmt.Printf("%s[!] Error: Target domain and contact name are required.%s\n", colorRed, colorReset)
+	if rawDomain == "" || rawName == "" || rawPersonLI == "" || rawCompanyLI == "" {
+		fmt.Printf("%s[!] Error: All 4 target fields are required: website, person name, person LinkedIn URL, and company LinkedIn URL.%s\n", colorRed, colorReset)
 		if isInteractive {
 			fmt.Print("\nPress Enter to exit...")
 			reader.ReadString('\n')
