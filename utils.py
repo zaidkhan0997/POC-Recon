@@ -5,7 +5,7 @@ import os
 import socket
 from typing import Optional
 from urllib.parse import urlparse
-from models import ReconResult
+from models import ReconResult, VerificationStatus
 
 logger = logging.getLogger("poc_recon")
 
@@ -81,17 +81,21 @@ def export_results_json(result: ReconResult, output_path: str) -> None:
 
 
 def export_results_csv(result: ReconResult, output_path: str) -> None:
-    """Exports candidate results to a standard CSV file."""
+    """Exports candidate results to a standard CSV file, highlighting the primary working email."""
     os.makedirs(os.path.dirname(os.path.abspath(output_path)), exist_ok=True)
-    fieldnames = ["email", "pattern", "status", "smtp_code", "smtp_message", "domain", "primary_mx"]
+    fieldnames = ["email", "is_primary", "confidence", "pattern", "status", "smtp_code", "smtp_message", "domain", "primary_mx"]
     primary_mx = result.mx_records[0].host if result.mx_records else "N/A"
+    primary_cand = result.get_primary_candidate()
 
     with open(output_path, "w", newline="", encoding="utf-8") as f:
         writer = csv.DictWriter(f, fieldnames=fieldnames)
         writer.writeheader()
         for candidate in result.candidates:
+            is_prim = bool(primary_cand and candidate.email == primary_cand.email)
             writer.writerow({
                 "email": candidate.email,
+                "is_primary": "YES" if is_prim else "NO",
+                "confidence": f"{candidate.confidence}%",
                 "pattern": candidate.pattern_name,
                 "status": str(candidate.status),
                 "smtp_code": candidate.smtp_code if candidate.smtp_code is not None else "",
@@ -105,9 +109,10 @@ def export_results_txt(
     result: ReconResult,
     output_path: str,
     company_linkedin: Optional[str] = None,
-    person_linkedin: Optional[str] = None
+    person_linkedin: Optional[str] = None,
+    show_all: bool = False
 ) -> None:
-    """Exports reconnaissance results as a simple, human-readable plain text file."""
+    """Exports reconnaissance results as a simple, human-readable plain text file focusing on the primary email."""
     os.makedirs(os.path.dirname(os.path.abspath(output_path)), exist_ok=True)
     primary_mx = result.mx_records[0].host if result.mx_records else "None"
     provider_name = result.provider.name if result.provider else "Unknown"
@@ -137,30 +142,55 @@ def export_results_txt(
         f"Primary MX Host    : {primary_mx}",
         f"Port 25 (SMTP)     : {'Open / Reachable' if result.port_25_open else 'Blocked by ISP or Firewall'}",
         f"Catch-All Domain   : {'Yes (Accepts All Probes)' if result.is_catch_all else 'No (Strict Verification)'}",
-        "-" * 78,
-        "🎯 PRIMARY WORKING EMAIL:",
-        f"Working Email      : {result.get_primary_candidate().email if result.get_primary_candidate() else 'None'}",
-        f"Confidence Score   : {result.get_primary_candidate().confidence if result.get_primary_candidate() else 0}%",
-        f"Pattern Format     : {result.get_primary_candidate().pattern_name if result.get_primary_candidate() else 'N/A'}",
-        f"Verification Status: [{result.get_primary_candidate().status if result.get_primary_candidate() else 'N/A'}]",
-        f"Diagnostics / Note : {(result.get_primary_candidate().smtp_message if result.get_primary_candidate() else None) or 'Standard provider pattern'}",
-        "-" * 78,
-        "CANDIDATE EMAIL OUTCOMES:",
-        f"{'#':<4}{'Candidate Email':<32}{'Pattern':<14}{'Status':<24}{'Diagnostics'}",
-        "-" * 78,
     ])
 
-    for i, c in enumerate(result.candidates, 1):
-        status_str = f"[{c.status}]"
-        code_str = f"({c.smtp_code}) " if c.smtp_code else ""
-        diag_str = f"{code_str}{c.smtp_message or ''}".strip()
-        lines.append(f"{i:<4}{c.email:<32}{c.pattern_name:<14}{status_str:<24}{diag_str}")
+    best = result.get_primary_candidate()
+    if best:
+        status_label = f"[{best.status}]"
+        if best.status == VerificationStatus.VALID:
+            status_desc = "Confirmed 100% Valid & Deliverable"
+        elif best.confidence >= 80:
+            status_desc = f"High Confidence Match ({best.confidence}%) - Standard Provider Pattern"
+        else:
+            status_desc = f"Calculated Candidate ({best.confidence}% confidence)"
 
-    lines.extend([
-        "=" * 78,
-        f"Total Candidates: {len(result.candidates)} | Confirmed Valid: {len(result.get_valid_emails())}",
-        "=" * 78,
-    ])
+        lines.extend([
+            "-" * 78,
+            "🎯 PRIMARY WORKING EMAIL:",
+            "-" * 78,
+            f"Email Address      : {best.email}",
+            f"Confidence Score   : {best.confidence}%",
+            f"Pattern Format     : {best.pattern_name}",
+            f"Verification Status: {status_label} ({status_desc})",
+            f"Diagnostics        : {best.smtp_message or 'Provider convention match'}",
+            "=" * 78,
+        ])
+
+    if show_all and result.candidates:
+        lines.extend([
+            "ALL CANDIDATE EMAIL PERMUTATIONS:",
+            "-" * 78,
+            f"{'#':<4}{'Candidate Email':<32}{'Pattern':<14}{'Conf':<8}{'Status':<24}{'Diagnostics'}",
+            "-" * 78,
+        ])
+        for i, c in enumerate(result.candidates, 1):
+            status_str = f"[{c.status}]"
+            code_str = f"({c.smtp_code}) " if c.smtp_code else ""
+            diag_str = f"{code_str}{c.smtp_message or ''}".strip()
+            conf_str = f"{c.confidence}%"
+            lines.append(f"{i:<4}{c.email:<32}{c.pattern_name:<14}{conf_str:<8}{status_str:<24}{diag_str}")
+
+        lines.extend([
+            "=" * 78,
+            f"Total Candidates: {len(result.candidates)} | Confirmed Valid: {len(result.get_valid_emails())}",
+            "=" * 78,
+        ])
+    else:
+        lines.extend([
+            f"Summary: 1 working email identified ({len(result.candidates)} permutations generated).",
+            "Note   : Run with --all / --show-all to view all candidate permutations.",
+            "=" * 78,
+        ])
 
     with open(output_path, "w", encoding="utf-8") as f:
         f.write("\n".join(lines) + "\n")
@@ -185,28 +215,29 @@ def export_results_html(
     invalid_count = sum(1 for c in result.candidates if str(c.status) == "INVALID")
     other_count = len(result.candidates) - valid_count - invalid_count
 
+    # Primary hero email
     primary_cand = result.get_primary_candidate()
     primary_hero_html = ""
     if primary_cand:
         p_email = primary_cand.email.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
         p_diag = (primary_cand.smtp_message or "Provider standard pattern match").replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
         primary_hero_html = f"""
-        <div class="primary-hero-card" style="background: linear-gradient(135deg, rgba(16, 185, 129, 0.15) 0%, rgba(59, 130, 246, 0.12) 100%); border: 2px solid var(--accent-emerald); border-radius: 12px; padding: 24px; margin-bottom: 28px; box-shadow: 0 10px 25px -5px rgba(16, 185, 129, 0.2);">
-            <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; flex-wrap: wrap; gap: 8px;">
-                <span style="font-weight: 700; font-size: 14px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--accent-emerald);">🎯 Primary Working Email Found</span>
-                <span class="confidence-badge" style="background: rgba(59, 130, 246, 0.2); border: 1px solid var(--accent-blue); color: var(--accent-blue); font-weight: 700; font-size: 12px; padding: 4px 10px; border-radius: 9999px;">{primary_cand.confidence}% Confidence</span>
+        <div class="primary-hero-card">
+            <div class="primary-hero-header">
+                <span class="primary-badge">🎯 Primary Working Email</span>
+                <span class="confidence-badge">{primary_cand.confidence}% Confidence</span>
             </div>
-            <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 16px;">
-                <div>
-                    <div style="font-size: 24px; font-weight: 800; color: #ffffff; letter-spacing: -0.02em;">{p_email}</div>
-                    <div style="font-size: 13px; color: var(--text-secondary); margin-top: 4px;">
-                        Pattern: <strong style="color: var(--accent-blue);">{primary_cand.pattern_name}</strong> &nbsp;|&nbsp;
-                        Status: <span class="badge badge-{str(primary_cand.status).lower()}">[{primary_cand.status}]</span>
-                    </div>
-                </div>
-                <button onclick="copyText('{p_email}', this)" style="background: var(--accent-emerald); color: #000; font-weight: 700; font-size: 13px; border: none; padding: 10px 18px; border-radius: 8px; cursor: pointer; display: flex; align-items: center; gap: 6px;">
-                    📋 Copy Working Email
+            <div class="primary-hero-body">
+                <span class="primary-hero-email">{p_email}</span>
+                <button class="hero-copy-btn" onclick="copyText('{p_email}', this)">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+                    <span>Copy Working Email</span>
                 </button>
+            </div>
+            <div class="primary-hero-footer">
+                <span><strong>Pattern:</strong> <code>{primary_cand.pattern_name}</code></span>
+                <span><strong>Status:</strong> [{primary_cand.status}]</span>
+                <span><strong>Diagnostics:</strong> {p_diag}</span>
             </div>
         </div>
         """
@@ -512,6 +543,83 @@ def export_results_html(
             font-weight: 600;
         }}
 
+        /* Primary Working Email Hero Card */
+        .primary-hero-card {{
+            background: linear-gradient(135deg, rgba(16, 185, 129, 0.14) 0%, rgba(56, 189, 248, 0.08) 100%);
+            border: 2px solid rgba(16, 185, 129, 0.45);
+            border-radius: var(--radius);
+            padding: 1.5rem;
+            margin-bottom: 2rem;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+        }}
+        .primary-hero-header {{
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 0.75rem;
+        }}
+        .primary-badge {{
+            background: #10b981;
+            color: #090d16;
+            font-weight: 700;
+            font-size: 0.85rem;
+            padding: 0.25rem 0.6rem;
+            border-radius: 6px;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }}
+        .confidence-badge {{
+            background: rgba(56, 189, 248, 0.2);
+            color: var(--accent);
+            border: 1px solid rgba(56, 189, 248, 0.4);
+            font-weight: 700;
+            font-size: 0.85rem;
+            padding: 0.25rem 0.6rem;
+            border-radius: 6px;
+        }}
+        .primary-hero-body {{
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 1rem;
+            margin-bottom: 0.75rem;
+        }}
+        .primary-hero-email {{
+            font-size: 1.6rem;
+            font-weight: 800;
+            color: #ffffff;
+            letter-spacing: -0.01em;
+            word-break: break-all;
+        }}
+        .hero-copy-btn {{
+            background: var(--accent);
+            color: #090d16;
+            border: none;
+            padding: 0.6rem 1.2rem;
+            border-radius: 8px;
+            font-weight: 700;
+            font-size: 0.9rem;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            transition: all 0.2s;
+        }}
+        .hero-copy-btn:hover {{
+            background: #7dd3fc;
+            transform: translateY(-1px);
+        }}
+        .primary-hero-footer {{
+            display: flex;
+            gap: 1.5rem;
+            flex-wrap: wrap;
+            font-size: 0.85rem;
+            color: var(--text-muted);
+            border-top: 1px solid rgba(255, 255, 255, 0.05);
+            padding-top: 0.75rem;
+        }}
+
         /* Table */
         .table-wrapper {{
             overflow-x: auto;
@@ -660,6 +768,8 @@ def export_results_html(
                 <ul class="mx-list">{mx_items}</ul>
             </div>
         </div>
+
+        {primary_hero_html}
 
         <div class="table-card">
             <div class="table-toolbar">

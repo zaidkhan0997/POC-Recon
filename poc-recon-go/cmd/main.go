@@ -106,6 +106,7 @@ func main() {
 
 	proxyFlag := flag.String("proxy", "", "SOCKS5 proxy URL (e.g. socks5://127.0.0.1:1080)")
 	noVerifyFlag := flag.Bool("no-verify", false, "Generate patterns and DNS intel without SMTP probes")
+	allFlag := flag.Bool("all", false, "Display all candidate permutations instead of single working email")
 	openReportFlag := flag.Bool("open", false, "Automatically open HTML report in web browser")
 
 	flag.Parse()
@@ -143,7 +144,11 @@ func main() {
 
 	domain, err := parser.NormalizeDomain(rawDomain)
 	if err != nil {
-		fmt.Printf("%s[!] Error normalizing domain: %v%s\n", colorRed, err, colorReset)
+		fmt.Printf("%s[!] Invalid website/domain: %v%s\n", colorRed, err, colorReset)
+		if isInteractive {
+			fmt.Print("\nPress Enter to exit...")
+			reader.ReadString('\n')
+		}
 		os.Exit(1)
 	}
 
@@ -218,9 +223,18 @@ func main() {
 			result.Candidates[i].SMTPCode = code
 			result.Candidates[i].SMTPMessage = msg
 			result.Candidates[i].Confidence = computeConfidence(status, result.Candidates[i].PatternName, provider, isCatchAll, port25Open)
+			if status == models.StatusValid {
+				result.BestCandidate = &result.Candidates[i]
+				if !*allFlag {
+					// Early-exit optimization
+					break
+				}
+			}
 			time.Sleep(300 * time.Millisecond) // Polite delay
 		}
 	}
+
+	result.BestCandidate = result.GetPrimaryCandidate()
 
 	// Print Overview Box
 	fmt.Println()
@@ -238,22 +252,41 @@ func main() {
 		portStatus = colorGreen + "✔ Open / Reachable" + colorReset
 	}
 	fmt.Printf(" Port 25 (SMTP)   : %s\n", portStatus)
-	fmt.Println("--------------------------------------------------------------------------------")
-	fmt.Printf(" %-4s %-32s %-14s %-16s %s\n", "#", "Candidate Email", "Pattern", "Status", "Code")
-	fmt.Println("--------------------------------------------------------------------------------")
 
-	for i, c := range result.Candidates {
-		color := colorYellow
-		if c.Status == models.StatusValid {
-			color = colorGreen
-		} else if c.Status == models.StatusInvalid {
-			color = colorRed
+	best := result.GetPrimaryCandidate()
+	if best != nil {
+		fmt.Println("--------------------------------------------------------------------------------")
+		fmt.Printf(" 🎯 PRIMARY WORKING EMAIL: %s%s%s\n", colorBold+colorGreen, best.Email, colorReset)
+		fmt.Printf(" Confidence Score       : %s%d%%%s\n", colorCyan, best.Confidence, colorReset)
+		fmt.Printf(" Pattern Format         : %s\n", best.PatternName)
+		fmt.Printf(" Verification Status    : %s\n", best.Status)
+		if best.SMTPMessage != "" {
+			fmt.Printf(" Diagnostics            : %s\n", best.SMTPMessage)
 		}
-		codeStr := "-"
-		if c.SMTPCode != nil {
-			codeStr = fmt.Sprintf("%d", *c.SMTPCode)
+	}
+
+	if *allFlag {
+		fmt.Println("--------------------------------------------------------------------------------")
+		fmt.Printf(" %-4s %-32s %-14s %-6s %-16s %s\n", "#", "Candidate Email", "Pattern", "Conf", "Status", "Code")
+		fmt.Println("--------------------------------------------------------------------------------")
+
+		for i, c := range result.Candidates {
+			color := colorYellow
+			if c.Status == models.StatusValid {
+				color = colorGreen
+			} else if c.Status == models.StatusInvalid {
+				color = colorRed
+			}
+			codeStr := "-"
+			if c.SMTPCode != nil {
+				codeStr = fmt.Sprintf("%d", *c.SMTPCode)
+			}
+			fmt.Printf(" %-4d %-32s %-14s %-6s %s%-16s%s %s\n", i+1, c.Email, c.PatternName, fmt.Sprintf("%d%%", c.Confidence), color, c.Status, colorReset, codeStr)
 		}
-		fmt.Printf(" %-4d %-32s %-14s %s%-16s%s %s\n", i+1, c.Email, c.PatternName, color, c.Status, colorReset, codeStr)
+	} else {
+		fmt.Println("--------------------------------------------------------------------------------")
+		fmt.Printf(" Summary: 1 working email identified (%d permutations evaluated).\n", len(result.Candidates))
+		fmt.Printf(" Note   : Pass -all to display all candidate permutations.\n")
 	}
 	fmt.Println("================================================================================")
 

@@ -87,18 +87,7 @@ def display_summary_table(
     console.print()
 
 
-def panel_color(status: VerificationStatus) -> str:
-    if status == VerificationStatus.VALID:
-        return "green"
-    elif status == VerificationStatus.INVALID:
-        return "red"
-    elif status == VerificationStatus.CATCH_ALL_UNVERIFIED:
-        return "yellow"
-    elif status == VerificationStatus.UNVERIFIED_PORT_BLOCKED:
-        return "cyan"
-    return "white"
-
-def display_results_table(result: ReconResult) -> None:
+def display_results_table(result: ReconResult, show_all: bool = False) -> None:
     best = result.get_primary_candidate()
     if best:
         if best.status == VerificationStatus.VALID:
@@ -121,10 +110,15 @@ def display_results_table(result: ReconResult) -> None:
         console.print(Panel(hero_text, title="[bold green]🎯 Primary Working Email Found[/bold green]", border_style=panel_border))
         console.print()
 
+    if not show_all and result.candidates:
+        console.print(f"[dim]💡 1 working email identified out of {len(result.candidates)} permutations evaluated. Pass [bold]--all[/bold] to inspect all permutations.[/dim]\n")
+        return
+
     table = Table(title="Candidate Email Verification Outcomes", show_header=True, header_style="bold blue")
     table.add_column("#", style="dim", width=4)
     table.add_column("Candidate Email", style="bold white", no_wrap=True)
     table.add_column("Pattern", style="cyan", no_wrap=True)
+    table.add_column("Conf", justify="center", width=6)
     table.add_column("Status", width=26)
     table.add_column("SMTP Code", justify="center", width=10)
     table.add_column("Diagnostics", style="dim")
@@ -146,8 +140,9 @@ def display_results_table(result: ReconResult) -> None:
 
         code_str = str(c.smtp_code) if c.smtp_code is not None else "-"
         diag_str = c.smtp_message or ""
+        conf_str = f"{c.confidence}%"
 
-        table.add_row(str(i), c.email, c.pattern_name, status_render, code_str, diag_str)
+        table.add_row(str(i), c.email, c.pattern_name, conf_str, status_render, code_str, diag_str)
 
     console.print(table)
     console.print()
@@ -158,11 +153,13 @@ def display_simple_text_summary(
     person: NameParts,
     result: ReconResult,
     company_linkedin: Optional[str] = None,
-    person_linkedin: Optional[str] = None
+    person_linkedin: Optional[str] = None,
+    show_all: bool = False
 ) -> None:
     """Displays results in a clean, copy-pasteable simple text format directly on screen."""
     primary_mx = result.mx_records[0].host if result.mx_records else "None"
     provider_name = result.provider.name if result.provider else "Unknown"
+    best = result.get_primary_candidate()
 
     text_output = []
     text_output.append("=" * 72)
@@ -179,7 +176,6 @@ def display_simple_text_summary(
     text_output.append(f"Catch-All : {'Enabled' if result.is_catch_all else 'Disabled/Strict'}")
     text_output.append("-" * 72)
 
-    best = result.get_primary_candidate()
     if best:
         text_output.append("🎯 PRIMARY WORKING EMAIL:")
         text_output.append(f"Email     : {best.email}")
@@ -189,17 +185,20 @@ def display_simple_text_summary(
         text_output.append(f"Notes     : {best.smtp_message or 'Standard provider pattern'}")
         text_output.append("-" * 72)
 
-    text_output.append(f"{'#':<4}{'Candidate Email':<32}{'Status':<16}{'Code / Notes'}")
-    text_output.append("-" * 72)
-
-    for i, c in enumerate(result.candidates, 1):
-        status_tag = f"[{c.status}]"
-        code_str = f"({c.smtp_code}) " if c.smtp_code else ""
-        diag = f"{code_str}{c.smtp_message or ''}".strip()
-        text_output.append(f"{i:<4}{c.email:<32}{status_tag:<16}{diag}")
-
-    text_output.append("=" * 72)
-    text_output.append(f"Summary: {len(result.candidates)} candidates | {len(result.get_valid_emails())} confirmed valid")
+    if show_all and result.candidates:
+        text_output.append(f"{'#':<4}{'Candidate Email':<30}{'Conf':<8}{'Status':<16}{'Code / Notes'}")
+        text_output.append("-" * 72)
+        for i, c in enumerate(result.candidates, 1):
+            status_tag = f"[{c.status}]"
+            code_str = f"({c.smtp_code}) " if c.smtp_code else ""
+            diag = f"{code_str}{c.smtp_message or ''}".strip()
+            conf_str = f"{c.confidence}%"
+            text_output.append(f"{i:<4}{c.email:<30}{conf_str:<8}{status_tag:<16}{diag}")
+        text_output.append("=" * 72)
+        text_output.append(f"Summary: {len(result.candidates)} candidates | {len(result.get_valid_emails())} confirmed valid")
+    else:
+        text_output.append(f"Summary: 1 working email identified ({len(result.candidates)} permutations evaluated).")
+        text_output.append("Note   : Use --all / --show-all to print all candidate permutations.")
     text_output.append("=" * 72)
 
     simple_text_str = "\n".join(text_output)
@@ -250,6 +249,7 @@ def main() -> None:
     parser.add_argument("--delay", type=float, default=0.5, help="Polite delay between SMTP queries in seconds (default: 0.5)")
     parser.add_argument("--no-verify", "--dry-run", action="store_true", help="Generate patterns and DNS intelligence without initiating SMTP connections")
     parser.add_argument("--no-cloud-fallback", action="store_true", help="Disable automatic HTTPS cloud fallback when Port 25 is blocked")
+    parser.add_argument("--all", "--show-all", action="store_true", help="Display all candidate permutations instead of focusing on the single working email")
     parser.add_argument("--output", "-o", help="Custom path for result export (e.g. results/output.json or results/output.csv)")
     parser.add_argument("--format", choices=["json", "csv", "txt", "html", "all", "both"], default="all", help="Export format: all, json, csv, txt, or html (default: all)")
     parser.add_argument("--open", "--open-browser", action="store_true", help="Automatically open the generated HTML website report in your web browser")
@@ -359,7 +359,7 @@ def main() -> None:
         display_port_25_help(result)
 
     # Screen Display: Candidate Outcomes Table
-    display_results_table(result)
+    display_results_table(result, show_all=args.all)
 
     # Screen Display: Simple Text Format (Clean, Copy-Pasteable)
     display_simple_text_summary(
@@ -367,7 +367,8 @@ def main() -> None:
         person=person,
         result=result,
         company_linkedin=company_linkedin,
-        person_linkedin=person_linkedin
+        person_linkedin=person_linkedin,
+        show_all=args.all
     )
 
     # Exporting Results
@@ -406,7 +407,7 @@ def main() -> None:
         exported_files.append(("CSV Table", csv_path))
 
     if "txt" in formats:
-        export_results_txt(result, txt_path, company_linkedin=company_linkedin, person_linkedin=person_linkedin)
+        export_results_txt(result, txt_path, company_linkedin=company_linkedin, person_linkedin=person_linkedin, show_all=args.all)
         exported_files.append(("Simple Text Format", txt_path))
 
     if "html" in formats:
