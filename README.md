@@ -7,22 +7,11 @@ A lightweight, privacy-respecting, and modular Python tool designed to discover 
 ## 📑 Table of Contents
 - [1. Overview & Philosophy](#1-overview--philosophy)
 - [2. Architecture & Data Flow](#2-architecture--data-flow)
-- [3. Installation & Setup](#3-installation--setup)
-  - [System Requirements](#system-requirements)
-  - [🐧 Linux Installation (Per Distro Guide)](#-linux-installation-per-distro-guide)
-    - [1. Debian / Ubuntu / Kali Linux / Linux Mint / Pop!_OS](#1-debian--ubuntu--kali-linux--linux-mint--pop_os)
-    - [2. Arch Linux / Manjaro / EndeavourOS](#2-arch-linux--manjaro--endeavouros)
-    - [3. Fedora / RHEL / CentOS Stream / Rocky Linux / AlmaLinux](#3-fedora--rhel--centos-stream--rocky-linux--almalinux)
-    - [4. openSUSE (Tumbleweed / Leap)](#4-opensuse-tumbleweed--leap)
-    - [5. Alpine Linux](#5-alpine-linux)
-  - [🪟 Windows Installation](#-windows-installation)
-    - [Prerequisites & Downloads](#prerequisites--downloads)
-    - [Method A: PowerShell (Recommended)](#method-a-using-powershell-recommended)
-    - [Method B: Classic Command Prompt (cmd.exe)](#method-b-using-classic-command-prompt-cmdexe)
-    - [Method C: Windows Subsystem for Linux (WSL2)](#method-c-using-windows-subsystem-for-linux-wsl2)
-  - [🍏 macOS Installation](#-macos-installation)
-    - [Prerequisites & Downloads](#prerequisites--downloads-1)
-    - [Step-by-Step Setup (Apple Silicon & Intel)](#step-by-step-setup-on-macos-apple-silicon--intel)
+- [3. Quick Installation (Standalone Executables)](#3-quick-installation-standalone-executables)
+  - [🪟 Windows (.exe)](#-windows-exe)
+  - [🐧 Linux](#-linux)
+  - [🍏 macOS](#-macos)
+  - [⚡ Native Go Engine (Optional)](#-native-go-engine-optional)
 - [4. Usage Guide](#4-usage-guide)
   - [Interactive Mode](#interactive-mode)
   - [CLI Mode](#cli-mode)
@@ -37,6 +26,7 @@ A lightweight, privacy-respecting, and modular Python tool designed to discover 
 - [8. Output Formats (JSON, CSV, Plain Text & Interactive Website)](#8-output-formats-json-csv-plain-text--interactive-website)
 - [9. Running the Test Suite](#9-running-the-test-suite)
 - [10. Ethical & Operational Boundaries](#10-ethical--operational-boundaries)
+- [11. License](#11-license)
 
 ---
 
@@ -87,253 +77,81 @@ Target Inputs: Website URL, Person Name, Optional LinkedIn URLs
 
 ---
 
-## 3. Installation & Setup
+## 3. Quick Installation (Standalone Executables)
 
-### System Requirements
-- **Python:** 3.10 or newer (tested on Python 3.10, 3.11, 3.12, 3.13, and 3.14)
-- **Git:** For cloning and updating the repository
-- **Supported Platforms:** Linux (all distributions), Windows (10/11 native or WSL2), macOS (Apple Silicon M1/M2/M3/M4 or Intel)
+No Python, Git, or virtual environment setup required! POC-Recon is distributed as single-file, zero-dependency standalone executables for all major platforms.
 
 ---
 
-### 🐧 Linux Installation (Per Distro Guide)
+### 🪟 Windows (.exe)
 
-Most modern Linux distributions implement [PEP 668](https://peps.python.org/pep-0668/) ("externally managed environment"), which requires installing Python packages inside an isolated virtual environment (`.venv`) rather than your root system.
-
-#### 1. Debian / Ubuntu / Kali Linux / Linux Mint / Pop!_OS
-- **Package Manager:** `apt`
-- **Official Documentation:** [Debian Python Wiki](https://wiki.debian.org/Python) | [Ubuntu Python Package](https://packages.ubuntu.com/search?keywords=python3-venv)
-
-```bash
-# 1. Update package lists and install Git, Python 3, pip, and virtual environment support
-sudo apt update && sudo apt install -y git python3 python3-pip python3-venv
-
-# 2. Clone the repository
-git clone https://github.com/zaidkhan0997/POC-Recon.git
-cd POC-Recon
-
-# 3. Create the virtual environment
-python3 -m venv .venv
-
-# 4. Activate the virtual environment
-source .venv/bin/activate
-
-# 5. Upgrade pip and install project requirements
-pip install --upgrade pip
-pip install -r requirements.txt
-
-# 6. Run POC-Recon
-python3 main.py
+#### Method 1: 1-Click PowerShell Installer (Recommended)
+Open **PowerShell** and run:
+```powershell
+irm https://raw.githubusercontent.com/zaidkhan0997/POC-Recon/main/install.ps1 | iex
 ```
+*This automatically installs POC-Recon, adds it to your PATH, and creates a Desktop shortcut!*
 
-#### 2. Arch Linux / Manjaro / EndeavourOS
-- **Package Manager:** `pacman`
-- **Official Documentation:** [Arch Linux Python Wiki](https://wiki.archlinux.org/title/Python)
-
-```bash
-# 1. Update system databases and install Python, pip, and Git
-sudo pacman -Syu git python python-pip
-
-# 2. Clone the repository
-git clone https://github.com/zaidkhan0997/POC-Recon.git
-cd POC-Recon
-
-# 3. Create the virtual environment
-python -m venv .venv
-
-# 4. Activate the virtual environment
-source .venv/bin/activate
-
-# 5. Upgrade pip and install dependencies
-pip install --upgrade pip
-pip install -r requirements.txt
-
-# 6. Run POC-Recon
-python main.py
-```
-
-#### 3. Fedora / RHEL / CentOS Stream / Rocky Linux / AlmaLinux
-- **Package Manager:** `dnf`
-- **Official Documentation:** [Fedora Python Quick Docs](https://docs.fedoraproject.org/en-US/quick-docs/installing-python/)
-
-```bash
-# 1. Install Git, Python 3, and pip
-sudo dnf install -y git python3 python3-pip
-
-# 2. Clone the repository
-git clone https://github.com/zaidkhan0997/POC-Recon.git
-cd POC-Recon
-
-# 3. Create the virtual environment
-python3 -m venv .venv
-
-# 4. Activate the virtual environment
-source .venv/bin/activate
-
-# 5. Upgrade pip and install dependencies
-pip install --upgrade pip
-pip install -r requirements.txt
-
-# 6. Run POC-Recon
-python3 main.py
-```
-
-#### 4. openSUSE (Tumbleweed / Leap)
-- **Package Manager:** `zypper`
-- **Official Documentation:** [openSUSE Python Portal](https://en.opensuse.org/openSUSE:Packaging_Python)
-
-```bash
-# 1. Install Python 3, pip, and Git
-sudo zypper install -y git python3 python3-pip
-
-# 2. Clone the repository
-git clone https://github.com/zaidkhan0997/POC-Recon.git
-cd POC-Recon
-
-# 3. Create and activate virtual environment
-python3 -m venv .venv
-source .venv/bin/activate
-
-# 4. Upgrade pip and install dependencies
-pip install --upgrade pip
-pip install -r requirements.txt
-
-# 5. Run POC-Recon
-python3 main.py
-```
-
-#### 5. Alpine Linux
-- **Package Manager:** `apk`
-- **Official Documentation:** [Alpine Linux Package Repository](https://pkgs.alpinelinux.org/packages?name=python3)
-
-```bash
-# 1. Update repositories and install Python, pip, virtualenv, and Git
-sudo apk update && sudo apk add git python3 py3-pip py3-virtualenv
-
-# 2. Clone the repository
-git clone https://github.com/zaidkhan0997/POC-Recon.git
-cd POC-Recon
-
-# 3. Create and activate virtual environment
-python3 -m venv .venv
-source .venv/bin/activate
-
-# 4. Upgrade pip and install dependencies
-pip install --upgrade pip
-pip install -r requirements.txt
-
-# 5. Run POC-Recon
-python3 main.py
-```
-
----
-
-### 🪟 Windows Installation
-
-#### Prerequisites & Downloads
-1. **Python 3.10+ for Windows:**
-   - **Download Link:** [Official Python for Windows (python.org)](https://www.python.org/downloads/windows/)
-   - ⚠️ **CRITICAL STEP:** During installation, ensure you check the box: **"Add python.exe to PATH"** before clicking "Install Now".
-2. **Git for Windows:**
-   - **Download Link:** [Git for Windows Official Installer (git-scm.com)](https://git-scm.com/download/win)
-3. *(Alternative 1-Command Installation via Windows Package Manager / Winget)*:
+#### Method 2: Direct Download
+1. Download **[poc-recon-windows-x64.exe](https://github.com/zaidkhan0997/POC-Recon/releases/latest)** from the latest release.
+2. Double-click the `.exe` to start the interactive prompt, or run it in Command Prompt / PowerShell:
    ```cmd
-   winget install Python.Python.3.12 Git.Git
+   poc-recon.exe --website example.com --name "Jane Doe"
    ```
-
-#### Method A: Using PowerShell (Recommended)
-If your PowerShell policy restricts running activation scripts, allow execution for your user:
-```powershell
-Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
-```
-
-Then clone and set up:
-```powershell
-# 1. Clone the repository
-git clone https://github.com/zaidkhan0997/POC-Recon.git
-cd POC-Recon
-
-# 2. Create the Python virtual environment
-python -m venv .venv
-
-# 3. Activate the virtual environment
-.venv\Scripts\Activate.ps1
-
-# 4. Upgrade pip and install dependencies
-python -m pip install --upgrade pip
-pip install -r requirements.txt
-
-# 5. Run POC-Recon
-python main.py
-```
-
-#### Method B: Using Classic Command Prompt (`cmd.exe`)
-```cmd
-:: 1. Clone the repository
-git clone https://github.com/zaidkhan0997/POC-Recon.git
-cd POC-Recon
-
-:: 2. Create virtual environment
-python -m venv .venv
-
-:: 3. Activate virtual environment
-.venv\Scripts\activate.bat
-
-:: 4. Upgrade pip and install dependencies
-python -m pip install --upgrade pip
-pip install -r requirements.txt
-
-:: 5. Run POC-Recon
-python main.py
-```
-
-#### Method C: Using Windows Subsystem for Linux (WSL2)
-If you prefer running in a full Linux environment inside Windows:
-1. Open PowerShell as Administrator and run:
-   ```powershell
-   wsl --install
-   ```
-2. Restart your PC, launch **Ubuntu**, and follow the [Debian / Ubuntu Linux instructions](#1-debian--ubuntu--kali-linux--linux-mint--pop_os) above.
 
 ---
 
-### 🍏 macOS Installation
+### 🐧 Linux
 
-#### Prerequisites & Downloads
-1. **Homebrew (Recommended Package Manager for macOS):**
-   - **Official Site:** [brew.sh](https://brew.sh)
-   - Install via Terminal:
-     ```bash
-     /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
-     ```
-2. **Apple Command Line Tools:**
-   ```bash
-   xcode-select --install
-   ```
-3. *(Alternative Official Installer without Homebrew)*: [Python macOS 64-bit universal installer (python.org)](https://www.python.org/downloads/macos/)
-
-#### Step-by-Step Setup on macOS (Apple Silicon & Intel)
+Install with a single command:
 ```bash
-# 1. Install Python 3 and Git using Homebrew
-brew install python git
-
-# 2. Clone the repository
-git clone https://github.com/zaidkhan0997/POC-Recon.git
-cd POC-Recon
-
-# 3. Create the Python virtual environment
-python3 -m venv .venv
-
-# 4. Activate the virtual environment
-source .venv/bin/activate
-
-# 5. Upgrade pip and install dependencies
-pip install --upgrade pip
-pip install -r requirements.txt
-
-# 6. Run POC-Recon
-python3 main.py
+curl -sSL https://raw.githubusercontent.com/zaidkhan0997/POC-Recon/main/install.sh | bash
 ```
+
+Or manually download and run:
+```bash
+# 1. Download the latest Linux binary
+curl -L -o poc-recon https://github.com/zaidkhan0997/POC-Recon/releases/latest/download/poc-recon-linux-x64
+
+# 2. Make it executable
+chmod +x poc-recon
+
+# 3. Run it
+./poc-recon
+```
+
+---
+
+### 🍏 macOS (Apple Silicon & Intel)
+
+Install with a single command:
+```bash
+curl -sSL https://raw.githubusercontent.com/zaidkhan0997/POC-Recon/main/install.sh | bash
+```
+
+Or manually download and run:
+```bash
+# 1. Download the latest macOS binary
+curl -L -o poc-recon https://github.com/zaidkhan0997/POC-Recon/releases/latest/download/poc-recon-macos-arm64
+
+# 2. Make it executable
+chmod +x poc-recon
+
+# 3. Run it
+./poc-recon
+```
+
+---
+
+### ⚡ Native Go Engine (Optional)
+
+For extreme performance and ultra-fast concurrent checks, a native Go engine is available in [`poc-recon-go/`](file:///home/zaidkhan0997/Projects/POC-Recon/poc-recon-go):
+- **Statically Linked Binary:** ~4 MB single binary, zero dependencies.
+- **Instant Cross-Compilation:**
+  ```bash
+  cd poc-recon-go
+  go build -o poc-recon cmd/main.go
+  ```
 
 ---
 
@@ -341,10 +159,10 @@ python3 main.py
 ## 4. Usage Guide
 
 ### Interactive Mode
-If you run `main.py` without arguments, it launches interactive prompts asking for all target details and verification mode:
+If you run `poc-recon` without arguments, it launches interactive prompts asking for all target details and verification mode (on Windows, just double-click `poc-recon-windows-x64.exe`!):
 
 ```bash
-python main.py
+poc-recon
 ```
 **Interactive prompts provided:**
 1. **Target Company Website / Domain:** (e.g. `example.com` or `https://example.com`)
@@ -358,19 +176,20 @@ python main.py
 Provide the target company website and person's name directly via command-line arguments:
 
 ```bash
-python main.py \
+poc-recon \
   --website "https://example.com" \
   --name "Jane Doe, MBA" \
   --company-linkedin "https://www.linkedin.com/company/example-corp" \
   --person-linkedin "https://www.linkedin.com/in/jane-doe-12345" \
   --open
 ```
+*(On Windows: replace `poc-recon` with `poc-recon.exe`)*
 
 ### Offline / Pattern-Only Mode (`--no-verify`)
 If your current network blocks Port 25 or you only want to generate corporate email combinations and inspect DNS records without initiating SMTP network connections:
 
 ```bash
-python main.py --website "github.com" --name "Nat Friedman" --no-verify
+poc-recon --website "github.com" --name "Nat Friedman" --no-verify
 ```
 
 ---
@@ -591,3 +410,9 @@ The test suite runs **100% offline** without needing internet access. All DNS qu
 2. **Rate-Limiting:** Incorporates a polite delay between candidate inquiries to avoid stressing remote mail servers.
 3. **No Scraping:** Adheres strictly to open protocols (DNS and SMTP) and does not violate Terms of Service of social networking sites.
 4. **Intended Use:** Designed for legitimate business communications, domain administration, security research, and deliverability verification.
+
+---
+
+## 11. License
+
+This project is licensed under the **GNU General Public License v3.0 (GPL-3.0)**. See the [LICENSE](LICENSE) file for the full text.
