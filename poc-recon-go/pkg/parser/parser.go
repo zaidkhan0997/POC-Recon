@@ -19,6 +19,10 @@ var (
 		"msc": true, "ba": true, "ma": true, "esq": true, "cpa": true,
 		"jr": true, "sr": true, "ii": true, "iii": true, "iv": true,
 	}
+	// Mirrors the Python reference implementation's DOMAIN_REGEX: each label is
+	// 1-63 chars, alphanumeric with optional internal hyphens/underscores, and
+	// the TLD is letters only. Rejects things like "example..com" or "-bad.com".
+	domainRegex = regexp.MustCompile(`^(?:[a-zA-Z0-9](?:[a-zA-Z0-9-_]{0,61}[a-zA-Z0-9])?\.)+[a-zA-Z]{2,}$`)
 )
 
 func NormalizeDomain(raw string) (string, error) {
@@ -43,8 +47,8 @@ func NormalizeDomain(raw string) (string, error) {
 		host = host[4:]
 	}
 
-	if !strings.Contains(host, ".") {
-		return "", fmt.Errorf("domain must contain a TLD (e.g., example.com)")
+	if !domainRegex.MatchString(host) {
+		return "", fmt.Errorf("invalid domain format: '%s'", host)
 	}
 
 	return host, nil
@@ -61,11 +65,14 @@ func ParsePersonName(raw string) models.NameParts {
 
 	var filtered []string
 	for _, tok := range tokens {
-		lower := strings.ToLower(strings.Trim(tok, "."))
+		trimmed := strings.Trim(tok, ".")
+		lower := strings.ToLower(trimmed)
 		if honorifics[lower] || degrees[lower] {
 			continue
 		}
-		filtered = append(filtered, tok)
+		if trimmed != "" {
+			filtered = append(filtered, trimmed)
+		}
 	}
 
 	if len(filtered) == 0 {
@@ -99,13 +106,23 @@ func ExtractNameFromLinkedInSlug(rawURL string) string {
 		return ""
 	}
 
-	re := regexp.MustCompile(`linkedin\.com/in/([^/?#]+)`)
-	matches := re.FindStringSubmatch(rawURL)
-	if len(matches) < 2 {
-		return ""
+	var slug string
+	if strings.Contains(rawURL, "/in/") {
+		matches := regexp.MustCompile(`/in/([^/?#]+)`).FindStringSubmatch(rawURL)
+		if len(matches) < 2 {
+			return ""
+		}
+		slug = matches[1]
+	} else if strings.Contains(rawURL, "linkedin.com") {
+		// e.g. "linkedin.com/jane-doe" with no "/in/" segment
+		trimmed := strings.TrimRight(rawURL, "/")
+		segments := strings.Split(trimmed, "/")
+		slug = segments[len(segments)-1]
+	} else {
+		// Bare slug with no URL wrapper at all, e.g. "jane-doe"
+		slug = rawURL
 	}
 
-	slug := matches[1]
 	// Remove trailing hashes/IDs like -a1b2c3d4 or -123456
 	slug = regexp.MustCompile(`-[0-9a-f]{5,}$`).ReplaceAllString(slug, "")
 	slug = regexp.MustCompile(`-[0-9]+$`).ReplaceAllString(slug, "")
