@@ -385,24 +385,14 @@ func main() {
 	}
 	fmt.Println("================================================================================")
 
-	// Export reports
+	// Export report (single self-contained HTML report)
 	_ = os.MkdirAll("results", 0755)
 	base := fmt.Sprintf("results/%s_%s", domain, strings.ToLower(person.FirstName))
-	jsonPath := base + "_results.json"
-	csvPath := base + "_results.csv"
-	txtPath := base + "_results.txt"
 	htmlPath := base + "_report.html"
 
-	_ = export.ExportJSON(result, jsonPath)
-	_ = export.ExportCSV(result, csvPath)
-	_ = export.ExportTXT(result, txtPath, *allFlag)
 	_ = export.ExportHTML(result, htmlPath)
 
-	fmt.Printf("\n%s[✔] Results persisted to:%s\n", colorGreen, colorReset)
-	fmt.Printf("  • JSON: %s\n", jsonPath)
-	fmt.Printf("  • CSV : %s\n", csvPath)
-	fmt.Printf("  • TXT : %s\n", txtPath)
-	fmt.Printf("  • HTML: %s\n", htmlPath)
+	fmt.Printf("\n%s[✔] Result persisted to HTML report:%s %s\n", colorGreen, colorReset, htmlPath)
 
 	if *openReportFlag || isInteractive {
 		if !*openReportFlag {

@@ -189,7 +189,7 @@ function renderResults(result) {
 
     // Export Paths Notice
     const baseName = `results/${result.target_domain}_${result.person.first_name.toLowerCase()}`;
-    document.getElementById("export-paths").textContent = `${baseName}_results.json, .csv, .txt, and _report.html`;
+    document.getElementById("export-paths").textContent = `${baseName}_report.html`;
 }
 
 function getBadgeClass(status) {

@@ -251,7 +251,7 @@ def main() -> None:
     parser.add_argument("--no-cloud-fallback", action="store_true", help="Disable automatic HTTPS cloud fallback when Port 25 is blocked")
     parser.add_argument("--all", "--show-all", action="store_true", help="Display all candidate permutations instead of focusing on the single working email")
     parser.add_argument("--output", "-o", help="Custom path for result export (e.g. results/output.json or results/output.csv)")
-    parser.add_argument("--format", choices=["json", "csv", "txt", "html", "all", "both"], default="all", help="Export format: all, json, csv, txt, or html (default: all)")
+    parser.add_argument("--format", choices=["json", "csv", "txt", "html", "all", "both"], default="html", help="Export format: html, json, csv, txt, or all (default: html)")
     parser.add_argument("--open", "--open-browser", action="store_true", help="Automatically open the generated HTML website report in your web browser")
     parser.add_argument("--debug", action="store_true", help="Enable verbose debug logging")
 

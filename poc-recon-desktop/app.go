@@ -291,13 +291,10 @@ func (a *App) RunRecon(req ReconRequest) (*models.ReconResult, error) {
 
 	result.BestCandidate = result.GetPrimaryCandidate()
 
-	// Persist to results/ folder automatically
-	a.emitProgress("export", "Exporting results to results/ folder...", 95)
+	// Persist to results/ folder automatically (single HTML report)
+	a.emitProgress("export", "Exporting visual report to results/...", 95)
 	_ = os.MkdirAll("results", 0755)
 	base := fmt.Sprintf("results/%s_%s", domain, strings.ToLower(person.FirstName))
-	_ = export.ExportJSON(result, base+"_results.json")
-	_ = export.ExportCSV(result, base+"_results.csv")
-	_ = export.ExportTXT(result, base+"_results.txt", true)
 	_ = export.ExportHTML(result, base+"_report.html")
 
 	a.emitProgress("done", "Reconnaissance complete!", 100)
