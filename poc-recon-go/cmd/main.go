@@ -19,22 +19,26 @@ import (
 	"github.com/zaidkhan0997/POC-Recon/poc-recon-go/pkg/verifier"
 )
 
-// ANSI color codes
 const (
-	colorReset  = "\033[0m"
-	colorCyan   = "\033[36m"
-	colorGreen  = "\033[32m"
-	colorYellow = "\033[33m"
-	colorRed    = "\033[31m"
-	colorBold   = "\033[1m"
-	colorDim    = "\033[2m"
+	colorReset   = "\033[0m"
+	colorBold    = "\033[1m"
+	colorDim     = "\033[2m"
+	colorRed     = "\033[31m"
+	colorGreen   = "\033[32m"
+	colorYellow  = "\033[33m"
+	colorBlue    = "\033[34m"
+	colorCyan    = "\033[36m"
 )
 
 func printBanner() {
-	fmt.Printf("%s%sPOC-Recon [Go Native]%s | %sLocal-First Business Email Discovery%s\n",
-		colorBold, colorCyan, colorReset, colorDim, colorReset)
-	fmt.Printf("%sPrivacy-respecting • Direct DNS & RFC 5321 verification • Zero dependencies%s\n\n",
-		colorDim, colorReset)
+	fmt.Println(colorCyan + colorBold + `
+   ___  ____  ______   ___                     
+  / _ \/ __ \/ ___/ | / (_)__ _____ ___  ___ _ 
+ / ___/ /_/ / /__ | |/ / / -_) __/ _ \/ _ '/ 
+/_/   \____/\___/ |___/_/\__/_/  \___/\_, /  
+                                     /___/   ` + colorReset)
+	fmt.Println(colorDim + " Local-First Business Email Intelligence & Deliverability Suite (Go Engine)" + colorReset)
+	fmt.Println("--------------------------------------------------------------------------------")
 }
 
 func openBrowser(url string) {
@@ -155,8 +159,8 @@ func main() {
 	person := parser.ParsePersonName(rawName)
 	candidates := generator.GenerateEmailPatterns(domain, person)
 
-	fmt.Printf("\n%s[*] Resolving DNS infrastructure for: %s%s...%s\n", colorBold, colorCyan, domain, colorReset)
-	mxList, err := verifier.LookupMX(domain)
+	fmt.Printf("\n%s[*] Resolving DNS infrastructure for: %s%s (with DoH Fallback)...%s\n", colorBold, colorCyan, domain, colorReset)
+	mxList, err := verifier.LookupMXWithDoH(domain, 5*time.Second)
 	hasMX := err == nil && len(mxList) > 0
 
 	var provider *models.ProviderInfo
@@ -203,22 +207,116 @@ func main() {
 			result.Candidates[i].Confidence = computeConfidence(models.StatusUnverified, result.Candidates[i].PatternName, provider, isCatchAll, port25Open)
 		}
 	} else if !port25Open {
+		fmt.Printf("%s[!] Port 25 blocked by local network. Engaging HTTPS Cloud & Identity Verifiers...%s\n", colorYellow, colorReset)
+		result.VerificationMethod = "HTTPS Cloud & Identity Verifiers (Port 443)"
+
+		isM365 := false
+		if provider != nil && strings.Contains(strings.ToLower(provider.Name), "microsoft") {
+			isM365 = true
+		}
+
 		for i := range result.Candidates {
-			result.Candidates[i].Status = models.StatusPortBlocked
-			result.Candidates[i].SMTPMessage = "Port 25 blocked by ISP or firewall"
-			result.Candidates[i].Confidence = computeConfidence(models.StatusPortBlocked, result.Candidates[i].PatternName, provider, isCatchAll, port25Open)
+			email := result.Candidates[i].Email
+			pattern := result.Candidates[i].PatternName
+			resolved := false
+
+			if isM365 {
+				st, code, msg := verifier.VerifyM365(email, 5*time.Second)
+				if st == models.StatusValid {
+					result.Candidates[i].Status = models.StatusValid
+					result.Candidates[i].SMTPCode = code
+					result.Candidates[i].SMTPMessage = msg
+					result.Candidates[i].Confidence = 100
+					resolved = true
+				} else if st == models.StatusInvalid {
+					result.Candidates[i].Status = models.StatusInvalid
+					result.Candidates[i].SMTPCode = code
+					result.Candidates[i].SMTPMessage = msg
+					result.Candidates[i].Confidence = 0
+					resolved = true
+				}
+			}
+
+			if !resolved {
+				st, code, msg := verifier.VerifyGravatar(email, 4*time.Second)
+				if st == models.StatusValid {
+					result.Candidates[i].Status = models.StatusValid
+					result.Candidates[i].SMTPCode = code
+					result.Candidates[i].SMTPMessage = msg
+					result.Candidates[i].Confidence = 100
+					resolved = true
+				}
+			}
+
+			if !resolved {
+				st, code, msg := verifier.VerifyPGPKeyring(email, 4*time.Second)
+				if st == models.StatusValid {
+					result.Candidates[i].Status = models.StatusValid
+					result.Candidates[i].SMTPCode = code
+					result.Candidates[i].SMTPMessage = msg
+					result.Candidates[i].Confidence = 100
+					resolved = true
+				}
+			}
+
+			if !resolved {
+				result.Candidates[i].Status = models.StatusPortBlocked
+				result.Candidates[i].SMTPMessage = "Port 25 blocked by ISP; HTTPS alternative checks non-conclusive"
+				result.Candidates[i].Confidence = computeConfidence(models.StatusPortBlocked, pattern, provider, isCatchAll, false)
+			}
+
+			if result.Candidates[i].Status == models.StatusValid {
+				result.BestCandidate = &result.Candidates[i]
+				if !*allFlag {
+					break
+				}
+			}
 		}
 	} else if isCatchAll {
+		fmt.Printf("%s[!] Catch-All active. Engaging HTTPS Cloud & Identity Verifiers...%s\n", colorYellow, colorReset)
 		for i := range result.Candidates {
-			result.Candidates[i].Status = models.StatusCatchAll
-			result.Candidates[i].SMTPMessage = "Mail server accepts all probes (Catch-All)"
-			result.Candidates[i].Confidence = computeConfidence(models.StatusCatchAll, result.Candidates[i].PatternName, provider, isCatchAll, port25Open)
+			email := result.Candidates[i].Email
+			pattern := result.Candidates[i].PatternName
+			resolved := false
+
+			st, code, msg := verifier.VerifyGravatar(email, 4*time.Second)
+			if st == models.StatusValid {
+				result.Candidates[i].Status = models.StatusValid
+				result.Candidates[i].SMTPCode = code
+				result.Candidates[i].SMTPMessage = msg
+				result.Candidates[i].Confidence = 100
+				resolved = true
+			}
+
+			if !resolved {
+				st, code, msg := verifier.VerifyPGPKeyring(email, 4*time.Second)
+				if st == models.StatusValid {
+					result.Candidates[i].Status = models.StatusValid
+					result.Candidates[i].SMTPCode = code
+					result.Candidates[i].SMTPMessage = msg
+					result.Candidates[i].Confidence = 100
+					resolved = true
+				}
+			}
+
+			if !resolved {
+				result.Candidates[i].Status = models.StatusCatchAll
+				result.Candidates[i].SMTPMessage = "Mail server accepts all probes (Catch-All)"
+				result.Candidates[i].Confidence = computeConfidence(models.StatusCatchAll, pattern, provider, isCatchAll, true)
+			}
+
+			if result.Candidates[i].Status == models.StatusValid {
+				result.BestCandidate = &result.Candidates[i]
+				if !*allFlag {
+					break
+				}
+			}
 		}
 	} else {
 		primaryMX := mxList[0].Host
 		fmt.Printf("\n%s[*] Verifying %d candidate permutations via SMTP...%s\n", colorBold, len(result.Candidates), colorReset)
 		for i := range result.Candidates {
-			status, code, msg := verifier.VerifyEmail(context.Background(), primaryMX, domain, result.Candidates[i].Email, 7*time.Second, *proxyFlag)
+			status, code, msg := verifier.VerifyEmail(context.Background(), primaryMX, domain, result.Candidates[i].Email, 8*time.Second, *proxyFlag)
 			result.Candidates[i].Status = status
 			result.Candidates[i].SMTPCode = code
 			result.Candidates[i].SMTPMessage = msg
@@ -239,15 +337,12 @@ func main() {
 	// Print Overview Box
 	fmt.Println()
 	fmt.Println("================================================================================")
-	fmt.Printf(" Target Domain    : %s\n", result.TargetDomain)
-	fmt.Printf(" Target Person    : %s\n", result.Person.FullName)
+	fmt.Printf(" Target Domain    : %s\n", domain)
+	fmt.Printf(" Target Person    : %s\n", person.FullName)
 	if provider != nil {
 		fmt.Printf(" Mail Provider    : %s\n", provider.Name)
 	}
-	if len(result.MXRecords) > 0 {
-		fmt.Printf(" Primary MX Host  : %s\n", result.MXRecords[0].Host)
-	}
-	portStatus := colorRed + "✖ Blocked / Unreachable" + colorReset
+	portStatus := colorRed + "✖ Blocked by ISP or Firewall" + colorReset
 	if port25Open {
 		portStatus = colorGreen + "✔ Open / Reachable" + colorReset
 	}
@@ -295,15 +390,18 @@ func main() {
 	base := fmt.Sprintf("results/%s_%s", domain, strings.ToLower(person.FirstName))
 	jsonPath := base + "_results.json"
 	csvPath := base + "_results.csv"
+	txtPath := base + "_results.txt"
 	htmlPath := base + "_report.html"
 
 	_ = export.ExportJSON(result, jsonPath)
 	_ = export.ExportCSV(result, csvPath)
+	_ = export.ExportTXT(result, txtPath, *allFlag)
 	_ = export.ExportHTML(result, htmlPath)
 
 	fmt.Printf("\n%s[✔] Results persisted to:%s\n", colorGreen, colorReset)
 	fmt.Printf("  • JSON: %s\n", jsonPath)
 	fmt.Printf("  • CSV : %s\n", csvPath)
+	fmt.Printf("  • TXT : %s\n", txtPath)
 	fmt.Printf("  • HTML: %s\n", htmlPath)
 
 	if *openReportFlag || isInteractive {
