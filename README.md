@@ -165,7 +165,7 @@ chmod +x poc-recon
 ### Desktop GUI Application
 Simply launch the desktop software executable:
 1. Enter the target domain (e.g. `stripe.com`) and person's name (e.g. `Patrick Collison`).
-2. Optionally enter LinkedIn URLs or SOCKS5 proxy configurations.
+2. Enter the person's LinkedIn URL (e.g. `https://www.linkedin.com/in/patrickcollison`) and company LinkedIn URL (e.g. `https://www.linkedin.com/company/stripe`).
 3. Click **"Start Reconnaissance"**.
 4. Watch real-time stage updates and copy the verified working email from the **Primary Email Hero Card**.
 5. Click **"Open Visual Report"** to view the saved interactive HTML dashboard in your browser.
@@ -173,16 +173,16 @@ Simply launch the desktop software executable:
 ---
 
 ### Interactive CLI Mode
-If you run `poc-recon` without arguments, it launches interactive prompts asking for all target details and verification mode:
+If you run `poc-recon` without arguments, it launches interactive prompts asking for all required target details and verification mode:
 
 ```bash
 poc-recon
 ```
 **Interactive prompts provided:**
-1. **Target Company Website / Domain:** (e.g. `example.com` or `https://example.com`)
-2. **Target Person's Full Name:** (e.g. `Jane Doe` or `Dr. John C. Smith, MBA`, or leave blank if using LinkedIn)
-3. **Person's LinkedIn Profile URL:** (e.g. `https://www.linkedin.com/in/jane-doe-12345`)
-4. **Company LinkedIn URL:** (e.g. `https://www.linkedin.com/company/example-corp`)
+1. **Target Company Website / Domain \*:** (e.g. `example.com` or `https://example.com`)
+2. **Target Person's Full Name \*:** (e.g. `Jane Doe` or `Dr. John C. Smith, MBA`)
+3. **Target Person's LinkedIn Profile URL \*:** (e.g. `https://www.linkedin.com/in/jane-doe-12345`)
+4. **Target Company LinkedIn URL \*:** (e.g. `https://www.linkedin.com/company/example-corp`)
 5. **Live Verification Mode:** choose `y` for live DNS + SMTP verification, or `n` for offline pattern generation
 6. **Open in Browser:** prompt to automatically open the generated interactive website report
 
@@ -329,10 +329,10 @@ A Catch-All mail server accepts incoming emails sent to **any** address at the d
 
 | Flag | Short | Default | Description |
 |---|---|---|---|
-| `--website` | `-w` | Prompt | Target company website URL or domain (e.g. `example.com`) |
-| `--name` | `-n` | Prompt | Target person's full name (e.g. `Jane Doe, MBA`) |
-| `--company-linkedin` | - | Prompt | Company LinkedIn URL (reference only) |
-| `--person-linkedin` | - | Prompt | Target person's LinkedIn URL (used for slug name fallback) |
+| `--website` | `-w` | Prompt | **[REQUIRED]** Target company website URL or domain (e.g. `example.com`) |
+| `--name` | `-n` | Prompt | **[REQUIRED]** Target person's full name (e.g. `Jane Doe, MBA`) |
+| `--person-linkedin` | - | Prompt | **[REQUIRED]** Target person's LinkedIn profile URL |
+| `--company-linkedin` | - | Prompt | **[REQUIRED]** Target company LinkedIn URL |
 | `--all` / `--show-all` | - | False | Show all candidate permutations instead of only the primary working email |
 | `--proxy` | - | None | SOCKS5 proxy URL for Port 25 routing (e.g. `socks5://127.0.0.1:1080`) |
 | `--no-cloud-fallback` | - | False | Disable automatic HTTPS cloud verification fallback when Port 25 is blocked |
