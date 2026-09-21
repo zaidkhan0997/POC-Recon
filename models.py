@@ -76,6 +76,7 @@ class ReconResult:
     port_25_open: bool = True
     verification_method: str = "SMTP (Port 25)"
     candidates: List[CandidateResult] = field(default_factory=list)
+    best_candidate: Optional[CandidateResult] = None
     timestamp: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
 
     def to_dict(self) -> Dict[str, Any]:
@@ -98,10 +99,27 @@ class ReconResult:
             "mx_records": [{"host": mx.host, "priority": mx.priority} for mx in self.mx_records],
             "is_catch_all": self.is_catch_all,
             "port_25_open": self.port_25_open,
+            "best_candidate": self.get_primary_candidate().to_dict() if self.get_primary_candidate() else None,
             "candidates": [c.to_dict() for c in self.candidates],
         }
 
     def get_valid_emails(self) -> List[str]:
         """Returns list of verified VALID email addresses."""
         return [c.email for c in self.candidates if c.status == VerificationStatus.VALID]
+
+    def get_primary_candidate(self) -> Optional[CandidateResult]:
+        """
+        Returns the single winning/primary working candidate:
+        1. Explicit best_candidate if set
+        2. First candidate confirmed VALID (100% deliverable)
+        3. Highest ranked candidate / fallback
+        """
+        if self.best_candidate:
+            return self.best_candidate
+        valid_candidates = [c for c in self.candidates if c.status == VerificationStatus.VALID]
+        if valid_candidates:
+            return valid_candidates[0]
+        if self.candidates:
+            return self.candidates[0]
+        return None
 

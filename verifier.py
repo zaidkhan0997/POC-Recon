@@ -544,7 +544,8 @@ def run_verification(
     delay: float = 0.5,
     proxy_url: Optional[str] = None,
     dry_run: bool = False,
-    cloud_fallback: bool = True
+    cloud_fallback: bool = True,
+    early_exit: bool = True
 ) -> ReconResult:
     """
     Coordinates the end-to-end discovery and verification workflow:
@@ -591,6 +592,7 @@ def run_verification(
                     smtp_message="Verification skipped in dry-run mode"
                 )
             )
+        result.best_candidate = result.get_primary_candidate()
         return result
 
     primary_mx = mx_records[0].host
@@ -726,5 +728,11 @@ def run_verification(
         # If we successfully found a confirmed VALID email, we log it
         if status == VerificationStatus.VALID:
             logger.info(f"Found VALID email: {email}")
+            if early_exit:
+                result.best_candidate = result.candidates[-1]
+                break
+
+    if not result.best_candidate:
+        result.best_candidate = result.get_primary_candidate()
 
     return result

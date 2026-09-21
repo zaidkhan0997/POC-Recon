@@ -87,7 +87,36 @@ def display_summary_table(
     console.print()
 
 
+def panel_color(status: VerificationStatus) -> str:
+    if status == VerificationStatus.VALID:
+        return "green"
+    elif status == VerificationStatus.INVALID:
+        return "red"
+    elif status == VerificationStatus.CATCH_ALL_UNVERIFIED:
+        return "yellow"
+    elif status == VerificationStatus.UNVERIFIED_PORT_BLOCKED:
+        return "cyan"
+    return "white"
+
 def display_results_table(result: ReconResult) -> None:
+    best = result.get_primary_candidate()
+    if best:
+        if best.status == VerificationStatus.VALID:
+            stat_style = "[bold green]CONFIRMED VALID (100% Deliverable)[/bold green]"
+            panel_border = "green"
+        else:
+            stat_style = f"[{panel_color(best.status)}]{best.status}[/{panel_color(best.status)}]"
+            panel_border = "cyan"
+
+        diag = best.smtp_message or "Standard corporate pattern match"
+        hero_text = f"""[bold white]Target Person :[/bold white] [bold]{result.person.full_name}[/bold]
+[bold white]Working Email :[/bold white] [bold green]{best.email}[/bold green]
+[bold white]Pattern Format:[/bold white] [magenta]{best.pattern_name}[/magenta]
+[bold white]Status        :[/bold white] {stat_style}
+[bold white]Diagnostics   :[/bold white] [dim]{diag}[/dim]"""
+        console.print(Panel(hero_text, title="[bold green]🎯 Primary Working Email Found[/bold green]", border_style=panel_border))
+        console.print()
+
     table = Table(title="Candidate Email Verification Outcomes", show_header=True, header_style="bold blue")
     table.add_column("#", style="dim", width=4)
     table.add_column("Candidate Email", style="bold white", no_wrap=True)
@@ -145,6 +174,16 @@ def display_simple_text_summary(
     text_output.append(f"Port 25   : {'Reachable' if result.port_25_open else 'Blocked by ISP'}")
     text_output.append(f"Catch-All : {'Enabled' if result.is_catch_all else 'Disabled/Strict'}")
     text_output.append("-" * 72)
+
+    best = result.get_primary_candidate()
+    if best:
+        text_output.append("🎯 PRIMARY WORKING EMAIL:")
+        text_output.append(f"Email     : {best.email}")
+        text_output.append(f"Pattern   : {best.pattern_name}")
+        text_output.append(f"Status    : [{best.status}]")
+        text_output.append(f"Notes     : {best.smtp_message or 'Standard provider pattern'}")
+        text_output.append("-" * 72)
+
     text_output.append(f"{'#':<4}{'Candidate Email':<32}{'Status':<16}{'Code / Notes'}")
     text_output.append("-" * 72)
 

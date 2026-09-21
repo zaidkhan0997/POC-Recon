@@ -138,6 +138,12 @@ def export_results_txt(
         f"Port 25 (SMTP)     : {'Open / Reachable' if result.port_25_open else 'Blocked by ISP or Firewall'}",
         f"Catch-All Domain   : {'Yes (Accepts All Probes)' if result.is_catch_all else 'No (Strict Verification)'}",
         "-" * 78,
+        "🎯 PRIMARY WORKING EMAIL:",
+        f"Working Email      : {result.get_primary_candidate().email if result.get_primary_candidate() else 'None'}",
+        f"Pattern Format     : {result.get_primary_candidate().pattern_name if result.get_primary_candidate() else 'N/A'}",
+        f"Verification Status: [{result.get_primary_candidate().status if result.get_primary_candidate() else 'N/A'}]",
+        f"Diagnostics / Note : {(result.get_primary_candidate().smtp_message if result.get_primary_candidate() else None) or 'Standard provider pattern'}",
+        "-" * 78,
         "CANDIDATE EMAIL OUTCOMES:",
         f"{'#':<4}{'Candidate Email':<32}{'Pattern':<14}{'Status':<24}{'Diagnostics'}",
         "-" * 78,
@@ -177,6 +183,31 @@ def export_results_html(
     valid_count = sum(1 for c in result.candidates if str(c.status) == "VALID")
     invalid_count = sum(1 for c in result.candidates if str(c.status) == "INVALID")
     other_count = len(result.candidates) - valid_count - invalid_count
+
+    primary_cand = result.get_primary_candidate()
+    primary_hero_html = ""
+    if primary_cand:
+        p_email = primary_cand.email.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+        p_diag = (primary_cand.smtp_message or "Provider standard pattern match").replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+        primary_hero_html = f"""
+        <div class="primary-hero-card" style="background: linear-gradient(135deg, rgba(16, 185, 129, 0.15) 0%, rgba(59, 130, 246, 0.12) 100%); border: 2px solid var(--accent-emerald); border-radius: 12px; padding: 24px; margin-bottom: 28px; box-shadow: 0 10px 25px -5px rgba(16, 185, 129, 0.2);">
+            <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; flex-wrap: wrap; gap: 8px;">
+                <span style="font-weight: 700; font-size: 14px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--accent-emerald);">🎯 Primary Working Email Found</span>
+            </div>
+            <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 16px;">
+                <div>
+                    <div style="font-size: 24px; font-weight: 800; color: #ffffff; letter-spacing: -0.02em;">{p_email}</div>
+                    <div style="font-size: 13px; color: var(--text-secondary); margin-top: 4px;">
+                        Pattern: <strong style="color: var(--accent-blue);">{primary_cand.pattern_name}</strong> &nbsp;|&nbsp;
+                        Status: <span class="badge badge-{str(primary_cand.status).lower()}">[{primary_cand.status}]</span>
+                    </div>
+                </div>
+                <button onclick="copyText('{p_email}', this)" style="background: var(--accent-emerald); color: #000; font-weight: 700; font-size: 13px; border: none; padding: 10px 18px; border-radius: 8px; cursor: pointer; display: flex; align-items: center; gap: 6px;">
+                    📋 Copy Working Email
+                </button>
+            </div>
+        </div>
+        """
 
     # Build candidate rows
     candidate_rows = []

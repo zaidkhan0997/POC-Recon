@@ -50,6 +50,7 @@ type ReconResult struct {
 	IsCatchAll         bool             `json:"is_catch_all"`
 	VerificationMethod string           `json:"verification_method"`
 	Candidates         []EmailCandidate `json:"candidates"`
+	BestCandidate      *EmailCandidate  `json:"best_candidate,omitempty"`
 	Timestamp          time.Time        `json:"timestamp"`
 }
 
@@ -61,4 +62,19 @@ func (r *ReconResult) GetValidEmails() []string {
 		}
 	}
 	return valid
+}
+
+func (r *ReconResult) GetPrimaryCandidate() *EmailCandidate {
+	if r.BestCandidate != nil {
+		return r.BestCandidate
+	}
+	for i := range r.Candidates {
+		if r.Candidates[i].Status == StatusValid {
+			return &r.Candidates[i]
+		}
+	}
+	if len(r.Candidates) > 0 {
+		return &r.Candidates[0]
+	}
+	return nil
 }
