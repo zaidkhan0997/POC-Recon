@@ -1,34 +1,41 @@
-# POC-Recon: Local-First POC Business Email Discovery & Verification Tool
+# POC-Recon: Local-First POC Business Email Discovery & Verification Suite
 
-A lightweight, privacy-respecting, and modular tool designed to discover and verify Point of Contact (POC) business email addresses using corporate pattern intelligence, DNS MX resolution, polite SMTP mailbox verification (`RCPT TO`), and HTTPS Cloud Directory fallback.
+A lightweight, privacy-respecting, and modular tool designed to discover and verify Point of Contact (POC) business email addresses using corporate pattern intelligence, DNS MX resolution (with DNS-over-HTTPS fallback), polite SMTP mailbox verification (`RCPT TO`), and HTTPS Cloud Directory fallback.
 
 > **🎯 Single Working Email Focus:** Unlike tools that dump 10+ confusing permutations, POC-Recon scores candidates with an enterprise intelligence engine to spotlight **the 1 primary working email** (with confidence score) by default. Pass `--all` anytime you wish to inspect all permutations.
+
+> **🖥️ Now Available as a Native Desktop GUI Application:** Prefer a modern graphical software window instead of the command line? Run POC-Recon as a standalone desktop GUI application for Windows, Linux, and macOS in [poc-recon-desktop/](poc-recon-desktop/).
 
 ---
 
 ## 📑 Table of Contents
 - [1. Overview & Philosophy](#1-overview--philosophy)
-- [2. Architecture & Data Flow](#2-architecture--data-flow)
-- [3. Quick Installation (Standalone Executables)](#3-quick-installation-standalone-executables)
-  - [🪟 Windows (.exe)](#-windows-exe)
-  - [🐧 Linux](#-linux)
-  - [🍏 macOS](#-macos)
-  - [⚡ Native Go Engine (Optional)](#-native-go-engine-optional)
+- [2. Editions & Architecture](#2-editions--architecture)
+  - [🖥️ Native Desktop GUI Software](#-native-desktop-gui-software)
+  - [⚡ Native Go CLI Engine](#-native-go-cli-engine)
+  - [🐍 Python CLI & Core Engine](#-python-cli--core-engine)
+- [3. Quick Installation](#3-quick-installation)
+  - [🖥️ Desktop GUI Software (Windows, Linux, macOS)](#️-desktop-gui-software-windows-linux-macos)
+  - [🪟 Windows CLI (.exe)](#-windows-cli-exe)
+  - [🐧 Linux CLI](#-linux-cli)
+  - [🍏 macOS CLI](#-macos-cli)
 - [4. Usage Guide](#4-usage-guide)
-  - [Interactive Mode](#interactive-mode)
-  - [CLI Mode](#cli-mode)
+  - [Desktop GUI Application](#desktop-gui-application)
+  - [Interactive CLI Mode](#interactive-cli-mode)
+  - [Command-Line Mode](#command-line-mode)
   - [Inspect All Permutations (`--all`)](#inspect-all-permutations---all)
   - [Offline / Pattern-Only Mode (`--no-verify`)](#offline--pattern-only-mode---no-verify)
 - [5. Intelligence & Confidence Scoring](#5-intelligence--confidence-scoring)
 - [6. Port 25 ISP Blocking & Solutions](#6-port-25-isp-blocking--solutions)
   - [Why is Port 25 Blocked?](#why-is-port-25-blocked)
-  - [Solution 1: Automatic HTTPS Cloud Fallback (Zero Port 25)](#solution-1-automatic-https-cloud-fallback-zero-port-25--100-free)
-  - [Solution 2: SSH SOCKS5 Dynamic Tunnel (For Remote SMTP)](#solution-2-ssh-socks5-dynamic-tunnel-for-remote-smtp)
-  - [Solution 3: Pre-Flight Fast-Fail Diagnostic](#solution-3-pre-flight-fast-fail-diagnostic)
-  - [Solution 4: DNS Intelligence & Provider Fingerprinting](#solution-4-dns-intelligence--provider-fingerprinting)
+  - [Solution 1: Automatic HTTPS Cloud Fallback (Zero Port 25 / 100% Free)](#solution-1-automatic-https-cloud-fallback-zero-port-25--100-free)
+  - [Solution 2: DNS-over-HTTPS (DoH) MX Fallback](#solution-2-dns-over-https-doh-mx-fallback)
+  - [Solution 3: SSH SOCKS5 Dynamic Tunnel (For Remote SMTP)](#solution-3-ssh-socks5-dynamic-tunnel-for-remote-smtp)
+  - [Solution 4: Pre-Flight Fast-Fail Diagnostic](#solution-4-pre-flight-fast-fail-diagnostic)
+  - [Solution 5: DNS Intelligence & Provider Fingerprinting](#solution-5-dns-intelligence--provider-fingerprinting)
 - [7. Catch-All Domains & Verification Realities](#7-catch-all-domains--verification-realities)
 - [8. CLI Reference](#8-cli-reference)
-- [9. Output Formats (JSON, CSV, Plain Text & Interactive Website)](#9-output-formats-json-csv-plain-text--interactive-website)
+- [9. Output Formats (Single Self-Contained HTML Report)](#9-output-formats-single-self-contained-html-report)
 - [10. Running the Test Suite](#10-running-the-test-suite)
 - [11. Ethical & Operational Boundaries](#11-ethical--operational-boundaries)
 - [12. License](#12-license)
@@ -39,8 +46,9 @@ A lightweight, privacy-respecting, and modular tool designed to discover and ver
 
 Most commercial email finders rely on costly third-party APIs, aggressive web crawlers, or questionable browser-based scraping of LinkedIn. **POC-Recon** takes a strictly local, protocol-level approach:
 
-- **100% Local & Protocol-Driven:** Relies on DNS MX/SPF records, direct SMTP handshakes, and public cryptographic/cloud directory checks.
+- **100% Local & Protocol-Driven:** Relies on DNS MX/SPF records, DNS-over-HTTPS (DoH), direct SMTP handshakes, and public cryptographic/cloud directory checks.
 - **Single Working Email Spotlight:** Rather than flooding users with 11 guesses, POC-Recon ranks permutations using live validation and enterprise naming statistics to present the single winning email address.
+- **Clean Results Output:** Saves only **1 clean, self-contained interactive HTML report** per search into the `results/` folder by default, avoiding folder clutter.
 - **No LinkedIn Scraping or Headless Browsers:** LinkedIn profile URLs are used strictly for client-side slug extraction (e.g. parsing `jane-doe-12345` into `Jane Doe`) as an offline fallback.
 - **RFC 5321 Safe Handshakes:** Connects to port 25, issues polite `EHLO`, `MAIL FROM`, and `RCPT TO` commands, records server diagnostic codes, and terminates with `QUIT`. **Never issues `DATA` or sends email.**
 - **Early-Exit Short-Circuit:** Once an email is 100% verified via SMTP or Cloud Directory, POC-Recon immediately short-circuits to deliver instant results without needless network calls.
@@ -48,71 +56,69 @@ Most commercial email finders rely on costly third-party APIs, aggressive web cr
 
 ---
 
-## 2. Architecture & Data Flow
+## 2. Editions & Architecture
 
-```text
-Target Inputs: Website URL, Person Name, Optional LinkedIn URLs
-                            │
-                            ▼
-     ┌──────────────────────────────────────────────┐
-     │           parser.py (Normalization)          │
-     │  - Domain syntax validation & extraction     │
-     │  - Name parsing (strips honorifics/degrees)  │
-     │  - LinkedIn slug fallback name extraction    │
-     └──────────────────────┬───────────────────────┘
-                            │
-              ┌─────────────┴─────────────┐
-              ▼                           ▼
-┌───────────────────────────┐ ┌──────────────────────────────────────┐
-│       generator.py        │ │             verifier.py              │
-│ - Standard corporate      │ │ - DNS MX resolution & priority sort  │
-│   patterns (first.last,   │ │ - SPF/MX mail provider fingerprint   │
-│   flast, first_last, etc.)│ │ - Pre-flight Port 25 connectivity    │
-│ - Unicode -> ASCII        │ │ - Catch-all canary probe             │
-│ - Deterministic dedup     │ │ - Polite RCPT TO handshake           │
-└─────────────┬─────────────┘ │ - HTTPS Cloud Fallback (Port 443)    │
-              │               │ - Confidence Scoring & Early Exit    │
-              │               └──────────────────┬───────────────────┘
-              │                                  │
-              └─────────────────┬────────────────┘
-                                │
-                                ▼
-     ┌──────────────────────────────────────────────┐
-     │             main.py & utils.py               │
-     │  - 🎯 Primary Working Email Spotlight Box    │
-     │  - Optional --all permutation view           │
-     │  - Rich terminal presentation & summary      │
-     │  - Export to JSON, CSV, TXT & HTML Report    │
-     └──────────────────────────────────────────────┘
-```
+POC-Recon is structured into modular editions tailored for both everyday business users and advanced terminal workflows:
+
+### 🖥️ Native Desktop GUI Software
+Located in [poc-recon-desktop/](poc-recon-desktop/):
+- **Modern Graphical Window:** Zero command-line knowledge required.
+- **Real-Time Live Progress:** Visual stage indicators and animated progress bars for DNS, SMTP, and Cloud checks.
+- **Primary Working Email Hero Card:** Copy verified emails directly to your clipboard in 1 click.
+- **Expandable Candidate Table:** Search, filter, and inspect all evaluated candidate permutations.
+- **Direct Report Access:** Integrated **"Open HTML Report"** and **"Open Results Folder"** actions.
+- **Cross-Platform:** Native builds for Windows (`.exe`), Linux (`x86_64`), and macOS (`.zip`).
+
+### ⚡ Native Go CLI Engine
+Located in [poc-recon-go/](poc-recon-go/):
+- **Statically Linked Binary:** Ultra-fast, single ~4 MB binary with zero runtime dependencies.
+- **DNS-over-HTTPS (DoH):** Built-in Cloudflare (`1.1.1.1`) and Google (`8.8.8.8`) DoH resolvers to bypass local DNS tampering.
+- **Cloud Identity Fallbacks:** Real-time Microsoft 365, Gravatar, and OpenPGP keyserver verifiers.
+- **High Concurrency:** Built on Go goroutines for blazing-fast verification.
+
+### 🐍 Python CLI & Core Engine
+Located in root directory ([main.py](main.py)):
+- Complete CLI reference implementation with rich terminal UI, colorized output, interactive prompts, and unit test suites.
 
 ---
 
-## 3. Quick Installation (Standalone Executables)
+## 3. Quick Installation
 
-No Python, Git, or virtual environment setup required! POC-Recon is distributed as single-file, zero-dependency standalone executables for all major platforms.
+Pre-compiled standalone binaries and desktop software packages are available on the **[GitHub Releases Page](https://github.com/zaidkhan0997/POC-Recon/releases/latest)**.
 
 ---
 
-### 🪟 Windows (.exe)
+### 🖥️ Desktop GUI Software (Windows, Linux, macOS)
+
+No runtime, Python, or external dependencies required:
+
+| Operating System | Package / Binary | Instructions |
+| :--- | :--- | :--- |
+| **🪟 Windows** | `poc-recon-desktop-windows-x64.exe` | Download from [Releases](https://github.com/zaidkhan0997/POC-Recon/releases/latest) and double-click to run. |
+| **🐧 Linux** | `poc-recon-desktop-linux-x64` | `chmod +x poc-recon-desktop-linux-x64 && ./poc-recon-desktop-linux-x64` |
+| **🍏 macOS** | `poc-recon-desktop-macos.zip` | Extract `.zip` and double-click the application. |
+
+---
+
+### 🪟 Windows CLI (.exe)
 
 #### Method 1: 1-Click PowerShell Installer (Recommended)
 Open **PowerShell** and run:
 ```powershell
 irm https://raw.githubusercontent.com/zaidkhan0997/POC-Recon/main/install.ps1 | iex
 ```
-*This automatically installs POC-Recon, adds it to your PATH, and creates a Desktop shortcut!*
+*Automatically installs POC-Recon, adds it to your PATH, and creates a Desktop shortcut.*
 
 #### Method 2: Direct Download
 1. Download **[poc-recon-windows-x64.exe](https://github.com/zaidkhan0997/POC-Recon/releases/latest)** from the latest release.
-2. Double-click the `.exe` to start the interactive prompt, or run it in Command Prompt / PowerShell:
+2. Run it in Command Prompt / PowerShell:
    ```cmd
    poc-recon-windows-x64.exe --website example.com --name "Jane Doe"
    ```
 
 ---
 
-### 🐧 Linux
+### 🐧 Linux CLI
 
 Install with a single command:
 ```bash
@@ -121,7 +127,7 @@ curl -sSL https://raw.githubusercontent.com/zaidkhan0997/POC-Recon/main/install.
 
 Or manually download and run:
 ```bash
-# 1. Download the latest Linux binary
+# 1. Download the latest Linux CLI binary
 curl -L -o poc-recon https://github.com/zaidkhan0997/POC-Recon/releases/latest/download/poc-recon-linux-x64
 
 # 2. Make it executable
@@ -133,7 +139,7 @@ chmod +x poc-recon
 
 ---
 
-### 🍏 macOS (Apple Silicon & Intel)
+### 🍏 macOS CLI
 
 Install with a single command:
 ```bash
@@ -142,7 +148,7 @@ curl -sSL https://raw.githubusercontent.com/zaidkhan0997/POC-Recon/main/install.
 
 Or manually download and run:
 ```bash
-# 1. Download the latest macOS binary (arm64 for Apple Silicon, x64 for Intel)
+# 1. Download the latest macOS CLI binary
 curl -L -o poc-recon https://github.com/zaidkhan0997/POC-Recon/releases/latest/download/poc-recon-macos-arm64
 
 # 2. Make it executable
@@ -154,22 +160,20 @@ chmod +x poc-recon
 
 ---
 
-### ⚡ Native Go Engine (Optional)
+## 4. Usage Guide
 
-For extreme performance and ultra-fast concurrent checks, a native Go engine is available in [`poc-recon-go/`](poc-recon-go):
-- **Statically Linked Binary:** ~4 MB single binary, zero dependencies.
-- **Instant Cross-Compilation:**
-  ```bash
-  cd poc-recon-go
-  go build -o poc-recon cmd/main.go
-  ```
+### Desktop GUI Application
+Simply launch the desktop software executable:
+1. Enter the target domain (e.g. `stripe.com`) and person's name (e.g. `Patrick Collison`).
+2. Optionally enter LinkedIn URLs or SOCKS5 proxy configurations.
+3. Click **"Start Reconnaissance"**.
+4. Watch real-time stage updates and copy the verified working email from the **Primary Email Hero Card**.
+5. Click **"Open Visual Report"** to view the saved interactive HTML dashboard in your browser.
 
 ---
 
-## 4. Usage Guide
-
-### Interactive Mode
-If you run `poc-recon` without arguments, it launches interactive prompts asking for all target details and verification mode (on Windows, just double-click `poc-recon-windows-x64.exe`!):
+### Interactive CLI Mode
+If you run `poc-recon` without arguments, it launches interactive prompts asking for all target details and verification mode:
 
 ```bash
 poc-recon
@@ -184,7 +188,7 @@ poc-recon
 
 ---
 
-### CLI Mode
+### Command-Line Mode
 Provide the target company website and person's name directly via command-line arguments:
 
 ```bash
@@ -216,7 +220,7 @@ inspect all permutations.
 ---
 
 ### Inspect All Permutations (`--all`)
-If you want to view the full table of all 11 candidate permutations alongside their individual statuses, pass `--all` (or `--show-all`):
+If you want to view the full table of all candidate permutations alongside their individual statuses, pass `--all` (or `--show-all`):
 
 ```bash
 poc-recon --website "example.com" --name "Jane Doe" --all
@@ -245,7 +249,7 @@ POC-Recon evaluates each candidate through a multi-tier confidence scoring engin
 | **10% – 20% (Low Confidence)** | Uncommon permutations (`f.last`, `first_last`, `lfirst`) on unverified mail servers. |
 | **0% (Confirmed Invalid)** | Explicitly rejected mailbox (SMTP `550 User Unknown` or Microsoft 365 `IfExistsResult=1`). |
 
-When a candidate scores **100%**, POC-Recon immediately short-circuits remaining checks, saving time and bandwidth.
+When a candidate scores **100%**, POC-Recon immediately short-circuits remaining checks, delivering results instantly without unnecessary network traffic.
 
 ---
 
@@ -269,7 +273,12 @@ To disable this fallback and enforce SMTP-only probing, pass `--no-cloud-fallbac
 
 ---
 
-### Solution 2: SSH SOCKS5 Dynamic Tunnel (For Remote SMTP)
+### Solution 2: DNS-over-HTTPS (DoH) MX Fallback
+In restricted network environments or networks where standard UDP Port 53 DNS is intercepted or filtered, the native Go engine and desktop application automatically fall back to encrypted **DNS-over-HTTPS (DoH)** queries via **Cloudflare** (`https://cloudflare-dns.com/dns-query`) and **Google Public DNS** (`https://dns.google/resolve`).
+
+---
+
+### Solution 3: SSH SOCKS5 Dynamic Tunnel (For Remote SMTP)
 If you have access to any remote VPS where outbound Port 25 is open (e.g., Hetzner, OVH, Linode):
 
 #### Step 1: Open the SSH Dynamic SOCKS5 Tunnel
@@ -287,13 +296,13 @@ poc-recon \
 
 ---
 
-### Solution 3: Pre-Flight Fast-Fail Diagnostic
+### Solution 4: Pre-Flight Fast-Fail Diagnostic
 Traditional scripts attempt to verify each candidate one-by-one, waiting 10 seconds per timeout (wasting 2+ minutes). POC-Recon tests a single lightweight TCP connection to the primary MX server upfront. If blocked, it immediately engages Cloud Fallback or informs you in under 1 second.
 
 ---
 
-### Solution 4: DNS Intelligence & Provider Fingerprinting
-POC-Recon queries the target domain's MX and SPF TXT records via standard DNS (Port 53), fingerprinting the provider:
+### Solution 5: DNS Intelligence & Provider Fingerprinting
+POC-Recon queries the target domain's MX and SPF TXT records via DNS, fingerprinting the provider:
 - **Google Workspace (`aspmx.l.google.com`):** Uses strict user validation; returns 550 codes for non-existent users.
 - **Microsoft 365 (`mail.protection.outlook.com`):** Enterprise gateways often accept all recipients and route internally; verified via Cloud Directory.
 - **Mimecast / Proofpoint:** Enterprise email security gateways that frequently employ greylisting.
@@ -324,7 +333,7 @@ A Catch-All mail server accepts incoming emails sent to **any** address at the d
 | `--name` | `-n` | Prompt | Target person's full name (e.g. `Jane Doe, MBA`) |
 | `--company-linkedin` | - | Prompt | Company LinkedIn URL (reference only) |
 | `--person-linkedin` | - | Prompt | Target person's LinkedIn URL (used for slug name fallback) |
-| `--all` / `--show-all` | - | False | Show all 11 permutation candidates instead of only the primary working email |
+| `--all` / `--show-all` | - | False | Show all candidate permutations instead of only the primary working email |
 | `--proxy` | - | None | SOCKS5 proxy URL for Port 25 routing (e.g. `socks5://127.0.0.1:1080`) |
 | `--no-cloud-fallback` | - | False | Disable automatic HTTPS cloud verification fallback when Port 25 is blocked |
 | `--no-verify` / `--dry-run` | - | False | Offline mode: generates patterns & DNS data without SMTP checks |
@@ -332,81 +341,29 @@ A Catch-All mail server accepts incoming emails sent to **any** address at the d
 | `--smtp-timeout` | - | `8.0` | Timeout in seconds for SMTP connections |
 | `--delay` | - | `0.5` | Polite delay between candidate SMTP checks in seconds |
 | `--output` | `-o` | `results/` | Path for custom export file |
-| `--format` | - | `all` | Export format: `all`, `json`, `csv`, `txt`, or `html` |
+| `--format` | - | `html` | Export format: `html`, `json`, `csv`, `txt`, or `all` (default: `html`) |
 | `--open` / `--open-browser` | - | False | Automatically open generated interactive HTML website report in browser |
 | `--debug` | - | False | Enable verbose debugging and network logging |
 
 ---
 
-## 9. Output Formats (JSON, CSV, Plain Text & Interactive Website)
+## 9. Output Formats (Single Self-Contained HTML Report)
 
-Results are displayed on screen and automatically persisted to the `results/` directory:
+To keep your workspace and project folders clean, POC-Recon persists **1 single, self-contained interactive HTML report** into the `results/` folder by default:
 
-- **JSON Data:** `results/<domain>_<name>_results.json`
-- **CSV Spreadsheet:** `results/<domain>_<name>_results.csv`
-- **Simple Text Summary:** `results/<domain>_<name>_results.txt`
-- **Interactive Website Report:** `results/<domain>_<name>_report.html` (responsive dark dashboard with search, copy buttons, and primary email hero card)
-
-### Sample Simple Text Format:
 ```text
-========================================================================
-          POC-RECON RESULTS: SIMPLE TEXT FORMAT (COPY & PASTE)
-========================================================================
-Domain    : example.com
-Target    : Jane Doe
-Provider  : Google Workspace | Primary MX: aspmx.l.google.com
-Port 25   : Reachable
-Catch-All : Disabled/Strict
-------------------------------------------------------------------------
-🎯 PRIMARY WORKING EMAIL:
-Email     : jane.doe@example.com
-Confidence: 100%
-Pattern   : first.last
-Status    : [VALID]
-Notes     : Mailbox verified deliverable (250 OK)
-------------------------------------------------------------------------
-Summary: 1 working email identified (11 permutations evaluated).
-Note   : Use --all / --show-all to print all candidate permutations.
-========================================================================
+results/
+└── example.com_jane_report.html
 ```
 
-### Sample JSON Output:
-```json
-{
-  "timestamp": "2026-09-21T10:15:30.123456+00:00",
-  "domain": "example.com",
-  "person": {
-    "first_name": "Jane",
-    "middle_name": null,
-    "last_name": "Doe",
-    "raw_name": "Jane Doe, MBA",
-    "full_name": "Jane Doe"
-  },
-  "provider": {
-    "name": "Google Workspace",
-    "spf_record": "v=spf1 include:_spf.google.com ~all",
-    "details": "Google Workspace mail servers return strict 550 codes for non-existent users."
-  },
-  "best_candidate": {
-    "email": "jane.doe@example.com",
-    "pattern": "first.last",
-    "status": "VALID",
-    "confidence": 100,
-    "smtp_code": 250,
-    "smtp_message": "Mailbox verified deliverable (250 OK)"
-  },
-  "candidates": [
-    {
-      "email": "jane.doe@example.com",
-      "pattern": "first.last",
-      "status": "VALID",
-      "confidence": 100,
-      "smtp_code": 250,
-      "smtp_message": "Mailbox verified deliverable (250 OK)"
-    }
-  ]
-}
-```
+### Report Features
+- **Responsive Dark Theme:** Built for clarity and high-contrast readability.
+- **Primary Working Email Hero Card:** Highlights the single confirmed working email with confidence score, pattern details, and 1-click clipboard copying.
+- **Full Candidate Permutations Table:** Searchable and filterable table displaying every permutation, status badges, SMTP codes, and detailed diagnostic logs.
+- **Provider & DNS Intelligence Badge:** Displays MX priority records, SPF configuration, and mail server provider classification.
+- **Zero External Assets:** All styles and scripts are completely inlined—open the file in any browser on any offline computer.
+
+*(If you require machine-readable exports like JSON, CSV, or Plain Text in the CLI, pass `--format all`, `--format json`, `--format csv`, or `--format txt`.)*
 
 ---
 
@@ -414,21 +371,25 @@ Note   : Use --all / --show-all to print all candidate permutations.
 
 The test suite runs **100% offline** without needing internet access. All DNS queries and SMTP network interactions are mocked:
 
+### Python Unit Tests
 ```bash
-# Run tests with pytest
-pytest -v
-
-# Or run with Python's built-in unittest
+# Run with Python's built-in unittest
 python -m unittest discover -s tests -p "test_*.py" -v
 ```
 
+### Go Native Engine Unit Tests
+```bash
+cd poc-recon-go
+go test -v ./...
+```
+
 ### What is Tested:
-- **Single Working Email Resolution (`test_single_working_email.py`):** Primary candidate selection, confidence score assignment, early-exit short circuiting, `--all` flag filtering.
-- **Cloud Fallback (`test_cloud_fallback.py`):** Microsoft 365, OpenPGP, Gravatar, and GitHub identity checks over Port 443.
-- **Parser (`test_parser.py`):** Scheme stripping, honorific removal (`Dr.`, `Prof.`), degree/credential stripping (`MBA`, `Ph.D.`, `PMP`), LinkedIn slug parsing.
-- **Generator (`test_generator.py`):** Standard corporate patterns, Unicode accent conversion (`René Müller` -> `rene.muller`), deduplication.
-- **Verifier (`test_verifier.py`):** Mocked DNS MX priority sorting, provider fingerprinting, catch-all detection logic, SMTP 250/550/4xx mapping.
-- **Utilities (`test_utils.py`):** JSON, CSV, TXT, and HTML report export integrity.
+- **Single Working Email Resolution:** Primary candidate selection, confidence score assignment, early-exit short circuiting, `--all` flag filtering.
+- **Cloud Fallback:** Microsoft 365, OpenPGP, Gravatar, and GitHub identity checks over Port 443.
+- **Parser:** Scheme stripping, honorific removal (`Dr.`, `Prof.`), credential stripping (`MBA`, `Ph.D.`, `PMP`), LinkedIn slug parsing.
+- **Generator:** Standard corporate patterns, Unicode accent conversion (`René Müller` -> `rene.muller`), deduplication.
+- **Verifier:** Mocked DNS MX priority sorting, DoH fallback, provider fingerprinting, catch-all detection logic, SMTP 250/550/4xx mapping.
+- **Exporters:** Single HTML report generation, JSON, CSV, and TXT integrity.
 
 ---
 
