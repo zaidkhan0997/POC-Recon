@@ -54,6 +54,10 @@ func VerifyGitHub(email string, timeout time.Duration) (models.VerificationStatu
 	return cloud.VerifyGitHub(email, timeout)
 }
 
+func VerifyGoogleWorkspace(email string, timeout time.Duration) (models.VerificationStatus, *int, string) {
+	return cloud.VerifyGoogleWorkspace(email, timeout)
+}
+
 func VerifyCloudRelay(email string, relayURL string, token string, timeout time.Duration) (models.VerificationStatus, *int, string) {
 	return cloud.VerifyCloudRelay(email, relayURL, token, timeout)
 }

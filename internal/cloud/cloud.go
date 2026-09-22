@@ -165,6 +165,59 @@ func VerifyGitHub(email string, timeout time.Duration) (models.VerificationStatu
 	return VerifyGitHubCommits(email, timeout)
 }
 
+// VerifyGoogleWorkspace probes Google's public account existence endpoint
+// Used by Google's signup flow to check if an email already has an account
+func VerifyGoogleWorkspace(email string, timeout time.Duration) (models.VerificationStatus, *int, string) {
+	client := &http.Client{Timeout: timeout}
+
+	// Google's public email validation endpoint (used during account creation)
+	// Returns JSON with email availability status
+	reqURL := fmt.Sprintf("https://accounts.google.com/_/signup/validatepersonametadata?email=%s", url.QueryEscape(email))
+
+	req, err := http.NewRequest("GET", reqURL, nil)
+	if err != nil {
+		return models.StatusUnverified, nil, err.Error()
+	}
+	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+	req.Header.Set("Referer", "https://accounts.google.com/signup")
+	req.Header.Set("Accept", "application/json, text/plain, */*")
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return models.StatusUnverified, nil, err.Error()
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return models.StatusUnverified, nil, err.Error()
+	}
+
+	bodyStr := string(body)
+
+	// Google returns JSON indicating if email exists/available
+	// "exists": true = mailbox exists (valid)
+	// "available": false = mailbox exists (valid)
+	// "exists": false = mailbox doesn't exist (invalid)
+	// "available": true = mailbox doesn't exist (invalid)
+	if strings.Contains(bodyStr, `"exists":true`) || strings.Contains(bodyStr, `"available":false`) {
+		code := 200
+		return models.StatusValid, &code, "Verified: Mailbox exists in Google Workspace / Google Account"
+	}
+	if strings.Contains(bodyStr, `"exists":false`) || strings.Contains(bodyStr, `"available":true`) {
+		code := 404
+		return models.StatusInvalid, &code, "Rejected: No Google Workspace mailbox or Google Account"
+	}
+
+	// Also check for Google Workspace specific indicators
+	if strings.Contains(bodyStr, "workspace") && strings.Contains(bodyStr, "exists") {
+		code := 200
+		return models.StatusValid, &code, "Verified: Mailbox exists in Google Workspace"
+	}
+
+	return models.StatusUnverified, &resp.StatusCode, "Google Workspace check inconclusive"
+}
+
 type relayResponse struct {
 	Status  string `json:"status"`
 	Code    int    `json:"code"`

@@ -135,6 +135,19 @@ func main() {
 	isCatchAll := false
 	verificationMethod := "Local Heuristic Evaluation"
 
+	// PRE-FLIGHT: Test Port 25 connectivity BEFORE generating candidates
+	// This saves time if Port 25 is blocked - we can skip SMTP entirely
+	if !cfg.NoVerify && len(mxRecords) > 0 {
+		primaryMX := mxRecords[0].Host
+		fmt.Printf("🔌 Pre-flight: Testing Port 25 connectivity to %s...\\n", primaryMX)
+		testVerifier := smtp.NewVerifier(cfg.Proxy, cfg.SMTPTimeout, cfg.Delay)
+		port25Open = testVerifier.CheckPort25(primaryMX)
+
+		if !port25Open {
+			fmt.Println("🛡️  Port 25 blocked by local network/ISP — will use cloud-only verification")
+		}
+	}
+
 	// 4. Verification Engine
 	if !cfg.NoVerify && cfg.ReacherURL != "" {
 		fmt.Printf("🐳 Engaging self-hosted Reacher verification engine at %s...\n", cfg.ReacherURL)
@@ -168,16 +181,13 @@ func main() {
 		}
 	} else if !cfg.NoVerify && len(mxRecords) > 0 {
 		primaryMX := mxRecords[0].Host
-		verifier := smtp.NewVerifier(cfg.Proxy, cfg.SMTPTimeout, cfg.Delay)
-
-		fmt.Printf("🔌 Testing Port 25 connectivity to %s...\n", primaryMX)
-		port25Open = verifier.CheckPort25(primaryMX)
 
 		if port25Open {
 			verificationMethod = "AfterShip Pure-Go SMTP (RFC 5321)"
 			fmt.Println("✅ Port 25 is OPEN. Performing direct mailbox probing via AfterShip...")
 
 			// Catch-all check
+			verifier := smtp.NewVerifier(cfg.Proxy, cfg.SMTPTimeout, cfg.Delay)
 			isCatchAll = verifier.CheckCatchAll(domain, primaryMX)
 			if isCatchAll {
 				fmt.Println("⚠️  Domain has CATCH-ALL enabled. Verifications will be flagged accordingly.")
@@ -186,6 +196,9 @@ func main() {
 			afterShipVerifier := smtp.NewAfterShipVerifier(cfg.Proxy, cfg.SMTPTimeout)
 			ctx, cancel := context.WithCancel(context.Background())
 			defer cancel()
+
+			// NEW LOGIC: Test ALL candidates first, then evaluate
+			validIndices := []int{}
 
 			for i := range candidates {
 				select {
@@ -208,11 +221,25 @@ func main() {
 				candidates[i].SMTPMessage = msg
 
 				if status == models.StatusValid {
-					candidates[i].Confidence = 100
-					fmt.Printf("🎯 Validated mailbox: %s (Status: %s)\n", candidates[i].Email, status)
-					cancel() // Early exit for remaining permutations!
-					break
+					validIndices = append(validIndices, i)
 				}
+			}
+
+			// If catch-all domain, downgrade ALL valid results to StatusCatchAll
+			if isCatchAll {
+				for _, idx := range validIndices {
+					candidates[idx].Status = models.StatusCatchAll
+					candidates[idx].Confidence = 0
+					candidates[idx].SMTPMessage = "Catch-all domain accepted test address"
+				}
+				validIndices = nil
+			}
+
+			// NOW pick the best candidate from validated ones
+			if len(validIndices) > 0 {
+				bestIdx := selectBestCandidate(candidates, validIndices, activePattern)
+				candidates[bestIdx].Confidence = 100
+				fmt.Printf("🎯 Best validated mailbox: %s (Pattern: %s)\\n", candidates[bestIdx].Email, candidates[bestIdx].PatternName)
 			}
 
 		} else {
@@ -251,11 +278,14 @@ func main() {
 				}
 				relayWg.Wait()
 			} else {
-				// Seamless.ai-style Free Multi-Signal Engine (M365 + Gravatar + OpenPGP)
-				fmt.Println("⚡ Engaging free Multi-Signal verification (Microsoft 365 + Gravatar + OpenPGP)...")
-				verificationMethod = "Free Multi-Signal Verification (M365 + Gravatar + PGP)"
+				// Seamless.ai-style Free Multi-Signal Engine (M365 + Google + Gravatar + OpenPGP)
+				fmt.Println("⚡ Engaging free Multi-Signal verification (Microsoft 365 + Google Workspace + Gravatar + OpenPGP)...")
+				verificationMethod = "Free Multi-Signal Verification (M365 + Google + Gravatar + PGP)"
 				ctx, cancel := context.WithCancel(context.Background())
 				defer cancel()
+
+				// NEW LOGIC: Test ALL candidates first, then evaluate
+				validIndices := []int{}
 
 				for i := range candidates {
 					select {
@@ -274,9 +304,7 @@ func main() {
 						candidates[i].SMTPMessage = msRes.ConfirmedMethod
 						code := 200
 						candidates[i].SMTPCode = &code
-						fmt.Printf("🎯 Validated candidate via Multi-Signal: %s (%s)\n", candidates[i].Email, msRes.ConfirmedMethod)
-						cancel() // Short circuit on confirmed valid candidate!
-						break
+						validIndices = append(validIndices, i)
 					} else if msRes.Status == models.StatusInvalid {
 						candidates[i].Status = models.StatusInvalid
 						candidates[i].Confidence = 0
@@ -284,6 +312,13 @@ func main() {
 						candidates[i].SMTPCode = &code
 						candidates[i].SMTPMessage = msRes.ConfirmedMethod
 					}
+				}
+
+				// NOW pick the best candidate from validated ones
+				if len(validIndices) > 0 {
+					bestIdx := selectBestCandidate(candidates, validIndices, activePattern)
+					candidates[bestIdx].Confidence = 100
+					fmt.Printf("🎯 Best validated mailbox: %s (Pattern: %s)\\n", candidates[bestIdx].Email, candidates[bestIdx].PatternName)
 				}
 			}
 		}
@@ -449,4 +484,63 @@ func runBulkMode(cfg *config.Config) {
 		fmt.Printf("📄 Enriched CRM Export:   %s\n", outPath)
 	}
 	fmt.Println(strings.Repeat("=", 64))
+}
+
+// selectBestCandidate picks the best candidate from validated indices based on:
+// 1. Exact pattern match (activePattern from OSINT)
+// 2. Common corporate patterns priority (first.last, first, flast, etc.)
+// 3. Order in the original candidate list (OSINT-detected patterns are already prioritized)
+func selectBestCandidate(candidates []models.CandidateResult, validIndices []int, activePattern string) int {
+	if len(validIndices) == 1 {
+		return validIndices[0]
+	}
+
+	// Priority order for common corporate email patterns
+	patternPriority := map[string]int{
+		"first.last":      100,
+		"first":           90,
+		"flast":           85,
+		"firstlast":       80,
+		"first_last":      75,
+		"first-last":      70,
+		"last.first":      65,
+		"f.last":          60,
+		"last":            55,
+		"lfirst":          50,
+		"first.l":         45,
+		"f_last":          40,
+		"lastfirst":       35,
+		"last_first":      30,
+		"last-first":      25,
+		"first.m.last":    20,
+		"firstmlast":      15,
+		"fmlast":          10,
+		"first.middle.last": 5,
+		"first-m-last":    3,
+	}
+
+	bestIdx := validIndices[0]
+	bestScore := -1
+
+	for _, idx := range validIndices {
+		c := candidates[idx]
+		score := 0
+
+		// Highest priority: exact match with OSINT-detected pattern
+		if activePattern != "" && strings.EqualFold(c.PatternName, activePattern) {
+			score += 1000
+		}
+
+		// Pattern-based priority
+		if p, ok := patternPriority[c.PatternName]; ok {
+			score += p
+		}
+
+		if score > bestScore {
+			bestScore = score
+			bestIdx = idx
+		}
+	}
+
+	return bestIdx
 }

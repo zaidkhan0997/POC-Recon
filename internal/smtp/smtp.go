@@ -6,8 +6,10 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
+	"math/rand/v2"
 	"net"
 	"net/url"
+	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -171,15 +173,40 @@ func CheckCatchAll(
 	timeout time.Duration,
 	proxyURL string,
 ) bool {
-	randomBytes := make([]byte, 8)
-	rand.Read(randomBytes)
-	canary := fmt.Sprintf("canary-probe-%s@%s", hex.EncodeToString(randomBytes), domain)
-
-	status, code, _ := VerifyEmail(ctx, mxHost, domain, canary, timeout, proxyURL)
-	if status == models.StatusValid || (code != nil && (*code == 250 || *code == 251)) {
-		return true
+	// Test multiple DIFFERENT obviously-fake patterns to reliably detect catch-all
+	// Smart catch-alls reject obviously fake emails, so we need multiple probes
+	randomSuffix := func() string {
+		b := make([]byte, 6)
+		rand.Read(b)
+		return hex.EncodeToString(b)
 	}
-	return false
+
+	probes := []string{
+		fmt.Sprintf("canary-probe-%s@%s", randomSuffix(), domain),
+		fmt.Sprintf("nonexistent-user-%s@%s", randomSuffix(), domain),
+		fmt.Sprintf("invalid-%s@%s", randomSuffix(), domain),
+		fmt.Sprintf("fake%d@%s", time.Now().UnixNano()%100000, domain),
+		fmt.Sprintf("test%d%d%d@%s", time.Now().Unix(), os.Getpid(), rand.IntN(10000), domain),
+	}
+
+	acceptCount := 0
+	for _, probe := range probes {
+		select {
+		case <-ctx.Done():
+			return false
+		default:
+		}
+
+		status, code, _ := VerifyEmail(ctx, mxHost, domain, probe, timeout, proxyURL)
+		if status == models.StatusValid || (code != nil && (*code == 250 || *code == 251)) {
+			acceptCount++
+		}
+		// Small delay between probes to avoid rate limiting
+		time.Sleep(200 * time.Millisecond)
+	}
+
+	// If >= 3 out of 5 probes accepted, it's a catch-all domain
+	return acceptCount >= 3
 }
 
 type Verifier struct {

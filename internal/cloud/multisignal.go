@@ -17,6 +17,7 @@ type MultiSignalResult struct {
 	Confidence      int
 	ConfirmedMethod string
 	M365Found       bool
+	GoogleFound     bool
 	GravatarFound   bool
 	PGPFound        bool
 	Details         []string
@@ -86,14 +87,24 @@ func MultiSignalCheck(ctx context.Context, email string, timeout time.Duration) 
 		}
 	}
 
-	// 2. Gravatar Identity probe
+	// 2. Google Workspace probe (NEW)
+	stGoogle, _, _ := VerifyGoogleWorkspace(email, timeout)
+	if stGoogle == models.StatusValid {
+		result.GoogleFound = true
+		result.Details = append(result.Details, "Google Workspace: Mailbox confirmed in cloud tenant")
+	} else if stGoogle == models.StatusInvalid {
+		// Don't immediately reject - maybe not Google Workspace
+		// Just note it wasn't found
+	}
+
+	// 3. Gravatar Identity probe
 	stGravatar, _, _ := VerifyGravatar(email, timeout)
 	if stGravatar == models.StatusValid {
 		result.GravatarFound = true
 		result.Details = append(result.Details, "Gravatar: Public identity avatar registered")
 	}
 
-	// 3. OpenPGP Keyring probe
+	// 4. OpenPGP Keyring probe
 	stPGP, _, _ := VerifyPGPKeyring(email, timeout)
 	if stPGP == models.StatusValid {
 		result.PGPFound = true
@@ -105,6 +116,9 @@ func MultiSignalCheck(ctx context.Context, email string, timeout time.Duration) 
 	if result.M365Found {
 		signalsCount += 2
 	}
+	if result.GoogleFound {
+		signalsCount += 2
+	}
 	if result.GravatarFound {
 		signalsCount++
 	}
@@ -112,14 +126,18 @@ func MultiSignalCheck(ctx context.Context, email string, timeout time.Duration) 
 		signalsCount++
 	}
 
-	if result.M365Found && (result.GravatarFound || result.PGPFound) {
+	if result.M365Found && (result.GoogleFound || result.GravatarFound || result.PGPFound) {
 		result.Status = models.StatusValid
 		result.Confidence = 95
 		result.ConfirmedMethod = fmt.Sprintf("High Confidence (95%%) – Microsoft 365 + %s (No SMTP)", strings.Join(result.Details, ", "))
-	} else if result.M365Found {
+	} else if result.M365Found || result.GoogleFound {
 		result.Status = models.StatusValid
 		result.Confidence = 88
-		result.ConfirmedMethod = "High Confidence (88%) – Microsoft 365 Cloud Directory (No SMTP)"
+		if result.M365Found {
+			result.ConfirmedMethod = "High Confidence (88%) – Microsoft 365 Cloud Directory (No SMTP)"
+		} else {
+			result.ConfirmedMethod = "High Confidence (88%) – Google Workspace Cloud Directory (No SMTP)"
+		}
 	} else if result.GravatarFound && result.PGPFound {
 		result.Status = models.StatusValid
 		result.Confidence = 82
