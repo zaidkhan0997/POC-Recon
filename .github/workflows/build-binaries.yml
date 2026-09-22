@@ -6,75 +6,87 @@ on:
       - 'v*'
     branches:
       - main
+  pull_request:
+    branches:
+      - main
   workflow_dispatch:
 
 permissions:
   contents: write
 
 jobs:
-  build-cli-binaries:
-    name: Build CLI (${{ matrix.os }} - ${{ matrix.arch }})
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          # Windows x64
-          - os: windows-latest
-            arch: x64
-            asset_name: poc-recon-windows-x64.exe
-            output_binary: dist/poc-recon-windows-x64.exe
-
-          # Linux x64
-          - os: ubuntu-latest
-            arch: x64
-            asset_name: poc-recon-linux-x64
-            output_binary: dist/poc-recon-linux-x64
-
-          # macOS (Apple Silicon & Intel)
-          - os: macos-latest
-            arch: arm64
-            asset_name: poc-recon-macos-arm64
-            output_binary: dist/poc-recon-macos-arm64
-
+  test-and-build-cli:
+    name: Test & Cross-Compile CLI Binaries
+    runs-on: ubuntu-latest
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
 
-      - name: Set up Python 3.12
-        uses: actions/setup-python@v5
+      - name: Set up Go
+        uses: actions/setup-go@v5
         with:
-          python-version: '3.12'
-          cache: 'pip'
+          go-version: 'stable'
+          cache: true
 
-      - name: Install Dependencies
+      - name: Run Go Unit Tests
         run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements.txt
-          pip install pyinstaller
+          go test -v ./...
 
-      - name: Build Executable with PyInstaller
-        shell: bash
+      - name: Cross-Compile Standalone Binaries
         run: |
-          pyinstaller --clean -y poc-recon.spec
-          if [ -f "dist/poc-recon.exe" ]; then
-            mv "dist/poc-recon.exe" "${{ matrix.output_binary }}"
-          elif [ -f "dist/poc-recon" ]; then
-            mv "dist/poc-recon" "${{ matrix.output_binary }}"
-          fi
-          ls -la dist/
+          mkdir -p dist/
 
-      - name: Test Executable Help Output
-        shell: bash
+          echo "[*] Building Linux x64..."
+          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o dist/poc-recon-linux-x64 ./cmd/poc-recon
+
+          echo "[*] Building Linux arm64..."
+          CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -ldflags="-s -w" -o dist/poc-recon-linux-arm64 ./cmd/poc-recon
+
+          echo "[*] Building Windows x64..."
+          CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -ldflags="-s -w" -o dist/poc-recon-windows-x64.exe ./cmd/poc-recon
+
+          echo "[*] Building macOS Intel (amd64)..."
+          CGO_ENABLED=0 GOOS=darwin GOARCH=amd64 go build -ldflags="-s -w" -o dist/poc-recon-macos-x64 ./cmd/poc-recon
+
+          echo "[*] Building macOS Apple Silicon (arm64)..."
+          CGO_ENABLED=0 GOOS=darwin GOARCH=arm64 go build -ldflags="-s -w" -o dist/poc-recon-macos-arm64 ./cmd/poc-recon
+
+          ls -lh dist/
+
+      - name: Test Native Linux Binary Help Output
         run: |
-          chmod +x ${{ matrix.output_binary }} || true
-          ${{ matrix.output_binary }} --help
+          chmod +x dist/poc-recon-linux-x64
+          ./dist/poc-recon-linux-x64 --help
 
-      - name: Upload Build Artifact
+      - name: Upload Linux x64 CLI
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ matrix.asset_name }}
-          path: ${{ matrix.output_binary }}
+          name: poc-recon-linux-x64
+          path: dist/poc-recon-linux-x64
+
+      - name: Upload Linux arm64 CLI
+        uses: actions/upload-artifact@v4
+        with:
+          name: poc-recon-linux-arm64
+          path: dist/poc-recon-linux-arm64
+
+      - name: Upload Windows x64 CLI
+        uses: actions/upload-artifact@v4
+        with:
+          name: poc-recon-windows-x64.exe
+          path: dist/poc-recon-windows-x64.exe
+
+      - name: Upload macOS x64 CLI
+        uses: actions/upload-artifact@v4
+        with:
+          name: poc-recon-macos-x64
+          path: dist/poc-recon-macos-x64
+
+      - name: Upload macOS arm64 CLI
+        uses: actions/upload-artifact@v4
+        with:
+          name: poc-recon-macos-arm64
+          path: dist/poc-recon-macos-arm64
 
   build-desktop-gui:
     name: Build Desktop GUI (${{ matrix.os }})
@@ -102,10 +114,10 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.23'
+          go-version: 'stable'
           cache: true
 
-      - name: Install Linux Dependencies
+      - name: Install Linux GUI Dependencies
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
@@ -150,7 +162,7 @@ jobs:
 
   publish-release:
     name: Create GitHub Release
-    needs: [build-cli-binaries, build-desktop-gui]
+    needs: [test-and-build-cli, build-desktop-gui]
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     steps:

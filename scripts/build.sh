@@ -1,23 +1,14 @@
 #!/usr/bin/env bash
 set -e
 
-echo "=== Building POC-Recon Standalone Executable ==="
+echo "=== Building POC-Recon (Pure Go Standalone Executable) ==="
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$SCRIPT_DIR"
 
-if [ ! -d ".venv" ]; then
-    echo "[*] Creating virtual environment (.venv)..."
-    python3 -m venv .venv
-fi
-
-echo "[*] Installing dependencies..."
-.venv/bin/pip install --upgrade pip
-.venv/bin/pip install -r requirements.txt pyinstaller
-
-echo "[*] Packaging with PyInstaller..."
-.venv/bin/pyinstaller --clean -y poc-recon.spec
+mkdir -p bin
+go build -ldflags="-s -w" -o bin/poc-recon ./cmd/poc-recon
 
 echo "=== Build Complete! ==="
-echo "Binary created at: dist/poc-recon"
-./dist/poc-recon --help
+echo "Binary created at: bin/poc-recon"
+./bin/poc-recon --help

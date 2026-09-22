@@ -11,11 +11,11 @@ import (
 	"time"
 
 	wailsRuntime "github.com/wailsapp/wails/v2/pkg/runtime"
-	"github.com/zaidkhan0997/POC-Recon/poc-recon-go/pkg/export"
-	"github.com/zaidkhan0997/POC-Recon/poc-recon-go/pkg/generator"
-	"github.com/zaidkhan0997/POC-Recon/poc-recon-go/pkg/models"
-	"github.com/zaidkhan0997/POC-Recon/poc-recon-go/pkg/parser"
-	"github.com/zaidkhan0997/POC-Recon/poc-recon-go/pkg/verifier"
+	"github.com/zaidkhan0997/POC-Recon/pkg/export"
+	"github.com/zaidkhan0997/POC-Recon/pkg/generator"
+	"github.com/zaidkhan0997/POC-Recon/pkg/models"
+	"github.com/zaidkhan0997/POC-Recon/pkg/parser"
+	"github.com/zaidkhan0997/POC-Recon/pkg/verifier"
 )
 
 // App struct

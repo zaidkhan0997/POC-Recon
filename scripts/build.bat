@@ -1,26 +1,16 @@
 @echo off
 echo ========================================================
-echo   Building POC-Recon Standalone Executable (.exe)
+echo   Building POC-Recon (Pure Go Executable .exe)
 echo ========================================================
 
 cd /d "%~dp0\.."
 
-if not exist ".venv" (
-    echo [*] Creating virtual environment (.venv)...
-    python -m venv .venv
-)
+if not exist "bin" mkdir bin
 
-echo [*] Installing requirements and PyInstaller...
-call .venv\Scripts\activate
-python -m pip install --upgrade pip
-pip install -r requirements.txt
-pip install pyinstaller
-
-echo [*] Packaging executable with PyInstaller...
-pyinstaller --clean -y poc-recon.spec
+go build -ldflags="-s -w" -o bin\poc-recon.exe .\cmd\poc-recon
 
 echo.
 echo ========================================================
-echo   Build Complete! Executable saved in: dist\poc-recon.exe
+echo   Build Complete! Executable saved in: bin\poc-recon.exe
 echo ========================================================
 pause

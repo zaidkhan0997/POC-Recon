@@ -1,42 +1,52 @@
-# Byte-compiled / optimized / DLL files
-__pycache__/
-*.py[cod]
-*$py.class
+# ==============================================================================
+# POC-Recon: Go & Desktop GUI Git Ignore
+# ==============================================================================
 
-# Virtual environments
-.venv/
-venv/
-ENV/
-env/
-
-# Distribution / packaging
-/build/
-/dist/
+# Binaries & Build Output
+bin/
+dist/
+build/
 out/
-*.egg-info/
-poc-recon-go/bin/
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.o
+*.a
+
+# Architecture / Release Bundles
+release/
+release-binaries/
+release-dist/
+
+# Test & Coverage Artifacts
+*.test
+*.out
+c.out
+coverage.out
+coverage.txt
+coverage.html
+
+# Go Profiling Data
+*.prof
+pprof/
+
+# Wails Desktop GUI Build & Frontend Dependencies
 poc-recon-desktop/build/bin/
+poc-recon-desktop/frontend/dist/
+poc-recon-desktop/frontend/node_modules/
+poc-recon-desktop/frontend/.eslintcache
 
-# Unit test / coverage
-.pytest_cache/
-.coverage
-htmlcov/
-
-# Local results output
+# Local Search & Recon Output
 results/*
 !results/.gitkeep
 
-# Environments & credentials
+# Environment & Secret Credentials
 .env
 .env.*
+!.env.example
 
-# IDE / Editor files
-.idea/
-.vscode/
-*.swp
-*.swo
-*~
-
-# OS generated files
+# Operating System Files
 .DS_Store
 Thumbs.db

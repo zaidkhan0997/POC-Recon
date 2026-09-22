@@ -12,13 +12,14 @@ A lightweight, privacy-respecting, and modular tool designed to discover and ver
 - [1. Overview & Philosophy](#1-overview--philosophy)
 - [2. Editions & Architecture](#2-editions--architecture)
   - [🖥️ Native Desktop GUI Software](#-native-desktop-gui-software)
-  - [⚡ Native Go CLI Engine](#-native-go-cli-engine)
-  - [🐍 Python CLI & Core Engine](#-python-cli--core-engine)
+  - [⚡ Pure Go Engine & CLI](#-pure-go-engine--cli)
 - [3. Quick Installation](#3-quick-installation)
   - [🖥️ Desktop GUI Software (Windows, Linux, macOS)](#️-desktop-gui-software-windows-linux-macos)
   - [🪟 Windows CLI (.exe)](#-windows-cli-exe)
   - [🐧 Linux CLI](#-linux-cli)
   - [🍏 macOS CLI](#-macos-cli)
+  - [⚡ Go Install (`go install`)](#-go-install)
+  - [🛠️ Building from Source](#️-building-from-source-go-122)
 - [4. Usage Guide](#4-usage-guide)
   - [Desktop GUI Application](#desktop-gui-application)
   - [Interactive CLI Mode](#interactive-cli-mode)
@@ -69,16 +70,14 @@ Located in [poc-recon-desktop/](poc-recon-desktop/):
 - **Direct Report Access:** Integrated **"Open HTML Report"** and **"Open Results Folder"** actions.
 - **Cross-Platform:** Native builds for Windows (`.exe`), Linux (`x86_64`), and macOS (`.zip`).
 
-### ⚡ Native Go CLI Engine
-Located in [poc-recon-go/](poc-recon-go/):
-- **Statically Linked Binary:** Ultra-fast, single ~4 MB binary with zero runtime dependencies.
-- **DNS-over-HTTPS (DoH):** Built-in Cloudflare (`1.1.1.1`) and Google (`8.8.8.8`) DoH resolvers to bypass local DNS tampering.
+### ⚡ Pure Go Engine & CLI
+Located in root (`cmd/poc-recon/`, `internal/`, `pkg/`):
+- **Statically Linked Binary:** Ultra-fast, single binary (~8 MB) with zero runtime dependencies.
+- **DNS-over-HTTPS (DoH):** Built-in Cloudflare (`1.1.1.1`) DoH resolver to ensure reliable MX resolution.
+- **Automated OSINT Pattern Detection:** Automatically queries DMARC records and OpenPGP keyservers to deduce company-wide naming conventions (e.g. `first@domain.com` vs `first.last@domain.com`).
 - **Cloud Identity Fallbacks:** Real-time Microsoft 365, Gravatar, and OpenPGP keyserver verifiers.
-- **High Concurrency:** Built on Go goroutines for blazing-fast verification.
-
-### 🐍 Python CLI & Core Engine
-Located in root directory ([main.py](main.py)):
-- Complete CLI reference implementation with rich terminal UI, colorized output, interactive prompts, and unit test suites.
+- **High Concurrency:** Goroutine worker pool with context cancellation and instant early exit upon 100% confidence.
+- **Terminal UI:** Beautiful modern terminal styling with Lipgloss.
 
 ---
 
@@ -90,7 +89,7 @@ Pre-compiled standalone binaries and desktop software packages are available on 
 
 ### 🖥️ Desktop GUI Software (Windows, Linux, macOS)
 
-No runtime, Python, or external dependencies required:
+Zero external dependencies or runtimes required (single self-contained executable):
 
 | Operating System | Package / Binary | Instructions |
 | :--- | :--- | :--- |
@@ -156,6 +155,39 @@ chmod +x poc-recon
 
 # 3. Run it
 ./poc-recon
+```
+
+---
+
+### ⚡ Go Install (`go install`)
+
+If you have Go installed on your machine, you can install POC-Recon directly into your `$GOPATH/bin`:
+
+```bash
+go install github.com/zaidkhan0997/POC-Recon/cmd/poc-recon@latest
+```
+
+---
+
+### 🛠️ Building from Source (Go 1.22+)
+
+If you have Go installed, you can build the standalone binary directly:
+
+```bash
+# Clone the repository
+git clone https://github.com/zaidkhan0997/POC-Recon.git
+cd POC-Recon
+
+# Build with Makefile
+make build
+
+# The executable will be in bin/poc-recon
+./bin/poc-recon --help
+```
+
+To cross-compile for all operating systems (Linux, Windows, macOS):
+```bash
+make cross-compile
 ```
 
 ---
@@ -244,17 +276,20 @@ poc-recon \
 
 ## 5. Intelligence & Confidence Scoring
 
-POC-Recon evaluates each candidate through a multi-tier confidence scoring engine:
+POC-Recon evaluates each candidate through an OSINT-driven, multi-tier confidence scoring engine with **zero hardcoded pattern bias**:
 
 | Confidence Score | Rationale & Criteria |
 |---|---|
-| **100% (Confirmed Valid)** | Mailbox verified deliverable via direct SMTP `250 OK` or confirmed via HTTPS Cloud Directory (Microsoft 365 / Gravatar / OpenPGP / GitHub). |
-| **95% (High Confidence)** | Industry-standard enterprise pattern (`first.last`) on major managed providers (Google Workspace / Microsoft 365) when Port 25 is ISP-blocked. |
-| **80% (Moderate Confidence)** | Common secondary enterprise pattern (`firstl` or `first`) on verified enterprise infrastructure. |
-| **10% – 20% (Low Confidence)** | Uncommon permutations (`f.last`, `first_last`, `lfirst`) on unverified mail servers. |
-| **0% (Confirmed Invalid)** | Explicitly rejected mailbox (SMTP `550 User Unknown` or Microsoft 365 `IfExistsResult=1`). |
+| **100% (Confirmed Valid)** | Mailbox verified deliverable via direct RFC 5321 SMTP `250 OK`, Cloud Relay verification, or confirmed exact match discovered in public domain OSINT (DMARC / OpenPGP). |
+| **90% – 95% (Active Pattern Match)** | Candidate matches company-wide pattern detected via live domain OSINT (e.g. `first@domain.com` for Stripe/GitHub) or explicit `--pattern` flag, evaluated on enterprise mail infrastructure. |
+| **85% (Industry Standard Fallback)** | Common corporate pattern (`first.last`) on enterprise providers (Google Workspace / Microsoft 365) when no specific domain pattern can be inferred from OSINT. |
+| **40% – 60% (Secondary Conventions)** | Common alternative corporate permutations (`flast`, `firstlast`, `first_last`) on standard infrastructure. |
+| **15% – 35% (Uncommon Permutations)** | Infrequent variations (`f.last`, `last.first`, `lfirst`) on unverified mail servers. |
+| **0% (Confirmed Invalid / No MX)** | Explicitly rejected mailbox (SMTP `550 User Unknown`, M365 `IfExistsResult=1`), or domain has no MX records in DNS. |
 
-When a candidate scores **100%**, POC-Recon immediately short-circuits remaining checks, delivering results instantly without unnecessary network traffic.
+> **⚡ Early-Exit Short-Circuit:** As soon as any candidate reaches **100% confidence**, the concurrent worker pool immediately cancels remaining in-flight probes, delivering results instantly without unnecessary network traffic or server rate-limits.
+>
+> **🔎 OSINT Pattern Auto-Detection:** Queries `_dmarc.<domain>` TXT records and OpenPGP keyservers (`keyserver.ubuntu.com`) in real-time. If multiple employees use `first@domain.com`, POC-Recon automatically elevates `first` to 95% confidence instead of forcing `first.last`.
 
 ---
 
@@ -334,21 +369,24 @@ A Catch-All mail server accepts incoming emails sent to **any** address at the d
 
 | Flag | Short | Default | Description |
 |---|---|---|---|
-| `--website` | `-w` | Prompt | **[REQUIRED]** Target company website URL or domain (e.g. `example.com`) |
-| `--name` | `-n` | Prompt | **[REQUIRED]** Target person's full name (e.g. `Jane Doe, MBA`) |
-| `--person-linkedin` | - | Prompt | **[REQUIRED]** Target person's LinkedIn profile URL |
-| `--company-linkedin` | - | Prompt | **[REQUIRED]** Target company LinkedIn URL |
-| `--all` / `--show-all` | - | False | Show all candidate permutations instead of only the primary working email |
-| `--proxy` | - | None | SOCKS5 proxy URL for Port 25 routing (e.g. `socks5://127.0.0.1:1080`) |
-| `--no-cloud-fallback` | - | False | Disable automatic HTTPS cloud verification fallback when Port 25 is blocked |
-| `--no-verify` / `--dry-run` | - | False | Offline mode: generates patterns & DNS data without SMTP checks |
-| `--dns-timeout` | - | `5.0` | Timeout in seconds for DNS queries |
-| `--smtp-timeout` | - | `8.0` | Timeout in seconds for SMTP connections |
-| `--delay` | - | `0.5` | Polite delay between candidate SMTP checks in seconds |
-| `--output` | `-o` | `results/` | Path for custom export file |
-| `--format` | - | `html` | Export format: `html`, `json`, `csv`, `txt`, or `all` (default: `html`) |
-| `--open` / `--open-browser` | - | False | Automatically open generated interactive HTML website report in browser |
-| `--debug` | - | False | Enable verbose debugging and network logging |
+| `--website`, `--domain` | `-w`, `-d` | Prompt | Target company website URL or domain (e.g. `stripe.com`) |
+| `--name` | `-n` | Prompt | Target person's full name (e.g. `Patrick Collison`) |
+| `--person-linkedin`, `--linkedin` | `-l` | None | Target person's LinkedIn profile URL or handle |
+| `--company-linkedin` | - | None | Target company LinkedIn URL |
+| `--pattern` | `-p` | Auto | Known email pattern override (e.g. `first`, `first.last`, `flast`) |
+| `--all` | `-a` | False | Display all evaluated candidate permutations in terminal summary |
+| `--concurrency` | `-c` | `4` | Number of concurrent verification workers (1–10) |
+| `--proxy` | - | None | SOCKS5 proxy URL for Port 25 routing (e.g. `socks5://127.0.0.1:1080` or env `POC_RECON_PROXY`) |
+| `--relay-url` | - | None | Cloud relay fallback endpoint URL (or env `POC_RECON_RELAY_URL`) |
+| `--relay-token` | - | None | Bearer token for cloud relay (or env `POC_RECON_RELAY_TOKEN`) |
+| `--no-cloud-fallback` | - | False | Disable cloud relay and provider-specific checks |
+| `--no-verify` | - | False | Offline mode: generates patterns, OSINT & DNS data without SMTP checks |
+| `--dns-timeout` | - | `5s` | Timeout in seconds for DNS queries |
+| `--smtp-timeout` | - | `10s` | Timeout in seconds for SMTP connections |
+| `--delay` | - | `400ms` | Polite delay in milliseconds between SMTP probes |
+| `--output` | `-o` | None | Save report to custom file path |
+| `--format` | `-f` | Inferred | Export format: `txt`, `html`, `json`, `csv` (inferred from `-o` extension) |
+| `--open` | - | False | Automatically open HTML report in browser after generation |
 
 ---
 
@@ -376,15 +414,12 @@ results/
 
 The test suite runs **100% offline** without needing internet access. All DNS queries and SMTP network interactions are mocked:
 
-### Python Unit Tests
+### Running Go Unit Tests
 ```bash
-# Run with Python's built-in unittest
-python -m unittest discover -s tests -p "test_*.py" -v
-```
+# Run tests across all packages
+make test
 
-### Go Native Engine Unit Tests
-```bash
-cd poc-recon-go
+# Or directly with Go:
 go test -v ./...
 ```
 
