@@ -7,17 +7,17 @@ import (
 )
 
 var defaultWeights = map[string]int{
-	"first.last":        85,
-	"first":             60,
-	"flast":             50,
-	"firstlast":         45,
-	"first_last":        40,
-	"last.first":        35,
-	"f.last":            30,
-	"last":              25,
-	"lfirst":            20,
-	"first.l":           20,
-	"f_last":            15,
+	"first.last":        75,
+	"first":             70,
+	"flast":             65,
+	"firstlast":         60,
+	"first_last":        55,
+	"last.first":        50,
+	"f.last":            50,
+	"last":              40,
+	"lfirst":            35,
+	"first.l":           35,
+	"f_last":            30,
 	"first.m.last":      25,
 	"firstmlast":        20,
 	"fmlast":            20,
@@ -62,21 +62,16 @@ func ComputeConfidence(
 		}
 	}
 
-	// Provider heuristics
-	if provider != nil {
-		targetPat := activePattern
-		if targetPat == "" {
-			targetPat = "first.last"
-		}
-
+	// Provider heuristics only elevate confirmed active pattern
+	if provider != nil && activePattern != "" {
 		pName := strings.ToLower(provider.Name)
 		if strings.Contains(pName, "google") || strings.Contains(pName, "workspace") || strings.Contains(pName, "microsoft") || strings.Contains(pName, "exchange") || strings.Contains(pName, "office") {
-			if patLower == targetPat {
+			if patLower == activePattern {
 				score += 5
 			}
 		}
 		if strings.Contains(provider.SPFRecord, "-all") {
-			if patLower == targetPat || activePattern == "" {
+			if patLower == activePattern {
 				score += 5
 			}
 		}

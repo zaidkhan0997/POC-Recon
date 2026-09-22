@@ -17,6 +17,7 @@ import (
 	"github.com/zaidkhan0997/POC-Recon/pkg/export"
 	"github.com/zaidkhan0997/POC-Recon/pkg/generator"
 	"github.com/zaidkhan0997/POC-Recon/pkg/models"
+	"github.com/zaidkhan0997/POC-Recon/pkg/osint"
 	"github.com/zaidkhan0997/POC-Recon/pkg/parser"
 	"github.com/zaidkhan0997/POC-Recon/pkg/verifier"
 )
@@ -61,22 +62,23 @@ func computeConfidence(status models.VerificationStatus, pattern string, provide
 	if status == models.StatusInvalid || status == models.StatusNoMX {
 		return 0
 	}
+	// Fairly balanced weights across major corporate naming conventions
 	weights := map[string]int{
-		"first.last": 85,
-		"first":      60,
-		"flast":      50,
-		"firstlast":  45,
-		"first_last": 40,
-		"last.first": 35,
-		"f.last":     30,
-		"last":       25,
-		"lfirst":     20,
-		"first.l":    20,
-		"f_last":     15,
+		"first.last": 75,
+		"first":      70,
+		"flast":      65,
+		"firstlast":  60,
+		"first_last": 55,
+		"last.first": 50,
+		"f.last":     50,
+		"last":       40,
+		"lfirst":     35,
+		"first.l":    35,
+		"f_last":     30,
 	}
 	score, ok := weights[pattern]
 	if !ok {
-		score = 15
+		score = 25
 	}
 	if preferredPattern != "" {
 		if strings.EqualFold(pattern, preferredPattern) {
@@ -85,19 +87,15 @@ func computeConfidence(status models.VerificationStatus, pattern string, provide
 			score = 60
 		}
 	}
-	if provider != nil {
-		targetPat := "first.last"
-		if preferredPattern != "" {
-			targetPat = preferredPattern
-		}
+	if provider != nil && preferredPattern != "" {
 		pLower := strings.ToLower(provider.Name)
 		if strings.Contains(pLower, "google") || strings.Contains(pLower, "workspace") || strings.Contains(pLower, "microsoft") {
-			if strings.EqualFold(pattern, targetPat) {
+			if strings.EqualFold(pattern, preferredPattern) {
 				score += 5
 			}
 		}
 		if strings.Contains(provider.SPFRecord, "-all") {
-			if strings.EqualFold(pattern, targetPat) || preferredPattern == "" {
+			if strings.EqualFold(pattern, preferredPattern) {
 				score += 5
 			}
 		}
@@ -116,8 +114,8 @@ func computeConfidence(status models.VerificationStatus, pattern string, provide
 
 // RunRecon executes the email intelligence workflow and streams progress events
 func (a *App) RunRecon(req ReconRequest) (*models.ReconResult, error) {
-	if strings.TrimSpace(req.Website) == "" || strings.TrimSpace(req.Name) == "" || strings.TrimSpace(req.PersonLinkedIn) == "" || strings.TrimSpace(req.CompanyLinkedIn) == "" {
-		return nil, fmt.Errorf("website domain, person name, person LinkedIn URL, and company LinkedIn URL are all required")
+	if strings.TrimSpace(req.Website) == "" || strings.TrimSpace(req.Name) == "" {
+		return nil, fmt.Errorf("website domain and person name are required")
 	}
 
 	a.emitProgress("init", "Normalizing target domain and person name...", 10)
@@ -128,18 +126,51 @@ func (a *App) RunRecon(req ReconRequest) (*models.ReconResult, error) {
 	}
 
 	person := parser.ParsePersonName(req.Name)
-	candidates := generator.GenerateEmailPatterns(domain, person)
-	if req.Pattern != "" {
-		var prioritized []models.EmailCandidate
-		var others []models.EmailCandidate
-		for _, c := range candidates {
-			if strings.EqualFold(c.PatternName, req.Pattern) {
-				prioritized = append(prioritized, c)
-			} else {
-				others = append(others, c)
+	if req.PersonLinkedIn != "" {
+		slugName := parser.ExtractNameFromLinkedInSlug(req.PersonLinkedIn)
+		if slugName.FirstName != "" {
+			person.FirstName = slugName.FirstName
+			if slugName.LastName != "" {
+				person.LastName = slugName.LastName
 			}
 		}
-		candidates = append(prioritized, others...)
+	}
+
+	// 1. Check local cache or user-specified override
+	c := cache.GetDefaultCache()
+	activePattern := strings.ToLower(strings.TrimSpace(req.Pattern))
+	if activePattern == "" && c != nil {
+		if dInfo, ok := c.GetDomainPattern(domain); ok && dInfo.Pattern != "" {
+			activePattern = dInfo.Pattern
+		}
+	}
+
+	// 2. Automated OSINT Pattern Detection (DMARC, PGP Keyservers, Security/Web records)
+	detectedPattern := ""
+	directMatch := ""
+	if activePattern == "" && !req.NoVerify {
+		a.emitProgress("osint", fmt.Sprintf("Scanning public OSINT records (DMARC, PGP, Web) for %s naming conventions...", domain), 15)
+		pat, _, _, exact := osint.DetectDomainPattern(domain, person, 4*time.Second)
+		if pat != "" {
+			detectedPattern = pat
+			activePattern = pat
+		}
+		if exact != "" {
+			directMatch = exact
+		}
+	}
+
+	// 3. Generate Candidate Email Permutations
+	candidates := generator.GenerateEmailPatternsWithPreferred(domain, person, activePattern)
+	if directMatch != "" {
+		for i := range candidates {
+			if strings.EqualFold(candidates[i].Email, directMatch) {
+				candidates[i].Status = models.StatusValid
+				candidates[i].Confidence = 100
+				candidates[i].SMTPMessage = "Confirmed: Exact match in public domain OSINT records"
+				break
+			}
+		}
 	}
 
 	a.emitProgress("dns", fmt.Sprintf("Resolving DNS & MX infrastructure for %s (DoH Fallback)...", domain), 25)
@@ -173,6 +204,7 @@ func (a *App) RunRecon(req ReconRequest) (*models.ReconResult, error) {
 		Provider:           provider,
 		Port25Open:         port25Open,
 		IsCatchAll:         isCatchAll,
+		DetectedPattern:    detectedPattern,
 		VerificationMethod: "Native Go SMTP (RFC 5321)",
 		Candidates:         candidates,
 		Timestamp:          time.Now(),
@@ -190,7 +222,7 @@ func (a *App) RunRecon(req ReconRequest) (*models.ReconResult, error) {
 		for i := range result.Candidates {
 			result.Candidates[i].Status = models.StatusUnverified
 			result.Candidates[i].SMTPMessage = "Verification skipped (Offline Mode)"
-			result.Candidates[i].Confidence = computeConfidence(models.StatusUnverified, result.Candidates[i].PatternName, provider, isCatchAll, port25Open, req.Pattern)
+			result.Candidates[i].Confidence = computeConfidence(models.StatusUnverified, result.Candidates[i].PatternName, provider, isCatchAll, port25Open, activePattern)
 		}
 	} else if !port25Open {
 		a.emitProgress("cloud", "Port 25 blocked by network. Engaging HTTPS Cloud & Identity Verifiers...", 60)
@@ -249,8 +281,8 @@ func (a *App) RunRecon(req ReconRequest) (*models.ReconResult, error) {
 
 			if !resolved {
 				result.Candidates[i].Status = models.StatusPortBlocked
-				result.Candidates[i].SMTPMessage = "Port 25 blocked by ISP; HTTPS alternative checks non-conclusive"
-				result.Candidates[i].Confidence = computeConfidence(models.StatusPortBlocked, pattern, provider, isCatchAll, false, req.Pattern)
+				result.Candidates[i].SMTPMessage = "Port 25 filtered by ISP; heuristic candidate evaluated"
+				result.Candidates[i].Confidence = computeConfidence(models.StatusPortBlocked, pattern, provider, isCatchAll, false, activePattern)
 			}
 
 			if result.Candidates[i].Status == models.StatusValid {
@@ -290,7 +322,7 @@ func (a *App) RunRecon(req ReconRequest) (*models.ReconResult, error) {
 			if !resolved {
 				result.Candidates[i].Status = models.StatusCatchAll
 				result.Candidates[i].SMTPMessage = "Mail server accepts all probes (Catch-All)"
-				result.Candidates[i].Confidence = computeConfidence(models.StatusCatchAll, pattern, provider, isCatchAll, true, req.Pattern)
+				result.Candidates[i].Confidence = computeConfidence(models.StatusCatchAll, pattern, provider, isCatchAll, true, activePattern)
 			}
 
 			if result.Candidates[i].Status == models.StatusValid {
@@ -308,7 +340,7 @@ func (a *App) RunRecon(req ReconRequest) (*models.ReconResult, error) {
 			result.Candidates[i].Status = status
 			result.Candidates[i].SMTPCode = code
 			result.Candidates[i].SMTPMessage = msg
-			result.Candidates[i].Confidence = computeConfidence(status, result.Candidates[i].PatternName, provider, isCatchAll, port25Open, req.Pattern)
+			result.Candidates[i].Confidence = computeConfidence(status, result.Candidates[i].PatternName, provider, isCatchAll, port25Open, activePattern)
 
 			if status == models.StatusValid {
 				result.BestCandidate = &result.Candidates[i]
@@ -326,18 +358,21 @@ func (a *App) RunRecon(req ReconRequest) (*models.ReconResult, error) {
 	base := fmt.Sprintf("results/%s_%s", domain, strings.ToLower(person.FirstName))
 	_ = export.ExportHTML(result, base+"_report.html")
 
-	// Save confirmed pattern and lead to local persistent cache
-	c := cache.GetDefaultCache()
-	provStr := "Standard"
-	if provider != nil && provider.Name != "" {
-		provStr = provider.Name
-	}
-	if result.BestCandidate != nil && result.BestCandidate.PatternName != "" {
-		c.SetDomainPattern(domain, result.BestCandidate.PatternName, provStr, isCatchAll)
-	}
-	savedLead := cache.ConvertReconResultToSavedLead(result)
-	if savedLead != nil {
-		c.SaveLead(*savedLead)
+	// Save confirmed pattern and lead to local persistent cache ONLY IF VERIFIED OR DETECTED VIA OSINT
+	if c != nil {
+		provStr := "Standard"
+		if provider != nil && provider.Name != "" {
+			provStr = provider.Name
+		}
+		if result.BestCandidate != nil && result.BestCandidate.PatternName != "" {
+			if result.BestCandidate.Status == models.StatusValid || result.DetectedPattern != "" {
+				c.SetDomainPattern(domain, result.BestCandidate.PatternName, provStr, isCatchAll)
+			}
+		}
+		savedLead := cache.ConvertReconResultToSavedLead(result)
+		if savedLead != nil {
+			c.SaveLead(*savedLead)
+		}
 	}
 
 	a.emitProgress("done", "Reconnaissance complete!", 100)
@@ -395,20 +430,41 @@ func (a *App) RunBulkRecon(targets []bulk.LeadTarget, proxyURL string, noVerify 
 		if res.Provider != nil && res.Provider.Name != "" {
 			provider = res.Provider.Name
 		}
+
+		var altEmails []string
+		for _, c := range res.Candidates {
+			if c.Email != "" && !strings.EqualFold(c.Email, bestEmail) {
+				altEmails = append(altEmails, c.Email)
+			}
+		}
+
 		exports = append(exports, bulk.EnrichedLeadExport{
-			FullName:     res.Person.FullName,
-			FirstName:    res.Person.FirstName,
-			LastName:     res.Person.LastName,
-			Domain:       res.TargetDomain,
-			Email:        bestEmail,
-			Confidence:   confidence,
-			Status:       status,
-			Pattern:      pattern,
-			MailProvider: provider,
-			VerifiedAt:   nowStr,
+			FullName:          res.Person.FullName,
+			FirstName:         res.Person.FirstName,
+			LastName:          res.Person.LastName,
+			Domain:            res.TargetDomain,
+			Email:             bestEmail,
+			Confidence:        confidence,
+			Status:            status,
+			Pattern:           pattern,
+			MailProvider:      provider,
+			VerifiedAt:        nowStr,
+			Alternatives:      altEmails,
+			AlternativeEmails: strings.Join(altEmails, "; "),
 		})
 	}
 	return exports, nil
+}
+
+// SaveGeneratedCSV writes the user-generated prospect CSV directly into results/generated_leads.csv
+func (a *App) SaveGeneratedCSV(csvContent string) (string, error) {
+	_ = os.MkdirAll("results", 0755)
+	path := "results/generated_leads.csv"
+	err := os.WriteFile(path, []byte(csvContent), 0644)
+	if err != nil {
+		return "", err
+	}
+	return path, nil
 }
 
 // GetSavedLeads returns all leads from local cache

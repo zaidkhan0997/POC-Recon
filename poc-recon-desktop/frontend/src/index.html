@@ -71,12 +71,12 @@
                                 <input type="text" id="input-name" placeholder="e.g. Jane Doe or Dr. John Smith, MBA" required>
                             </div>
                             <div class="form-group">
-                                <label for="input-person-li">Person LinkedIn URL <span class="required">*</span></label>
-                                <input type="text" id="input-person-li" placeholder="https://www.linkedin.com/in/jane-doe" required>
+                                <label for="input-person-li">Person LinkedIn URL (Optional)</label>
+                                <input type="text" id="input-person-li" placeholder="https://www.linkedin.com/in/jane-doe">
                             </div>
                             <div class="form-group">
-                                <label for="input-company-li">Company LinkedIn URL <span class="required">*</span></label>
-                                <input type="text" id="input-company-li" placeholder="https://www.linkedin.com/company/example" required>
+                                <label for="input-company-li">Company LinkedIn URL (Optional)</label>
+                                <input type="text" id="input-company-li" placeholder="https://www.linkedin.com/company/example">
                             </div>
                         </div>
 
@@ -118,24 +118,30 @@
                     </form>
                 </section>
 
-                <!-- Progress Card (Visible during scan) -->
+                <!-- Live Execution Progress Card -->
                 <section id="progress-card" class="card progress-card hidden">
                     <div class="progress-header">
-                        <span id="progress-message">Initializing reconnaissance...</span>
+                        <span id="progress-message">Analyzing infrastructure...</span>
                         <span id="progress-percentage" class="percentage-pill">0%</span>
                     </div>
                     <div class="progress-bar-track">
                         <div id="progress-bar-fill" class="progress-bar-fill" style="width: 0%;"></div>
                     </div>
+                    <div class="progress-steps-legend">
+                        <span>DNS/MX</span> &bull; 
+                        <span>Port 25 Handshake</span> &bull; 
+                        <span>Cloud Identity</span> &bull; 
+                        <span>SMTP Verification</span>
+                    </div>
                 </section>
 
-                <!-- Results Section (Visible after scan completes) -->
-                <section id="results-section" class="results-container hidden">
-                    <!-- Target Header Info Card -->
-                    <div class="card target-info-card">
-                        <div class="target-profile">
-                            <div class="target-avatar" id="target-initials">JD</div>
-                            <div class="target-details">
+                <!-- Reconnaissance Output Section -->
+                <section id="results-section" class="results-section hidden">
+                    <!-- Profile & Mail Provider Header -->
+                    <div class="card profile-card">
+                        <div class="profile-info">
+                            <div class="avatar" id="target-initials">JD</div>
+                            <div>
                                 <h3 id="target-name">Jane Doe</h3>
                                 <div class="target-meta">
                                     <span id="target-domain" class="meta-tag">example.com</span>
@@ -152,7 +158,7 @@
 
                     <!-- Spotlight Hero Card: Best Working Candidate -->
                     <div class="card hero-result-card">
-                        <div class="hero-badge">🎯 Top Verified Email Candidate</div>
+                        <div class="hero-badge">🎯 Top Email Candidate</div>
                         <div class="hero-email-row">
                             <div class="hero-email-wrap">
                                 <span id="hero-email" class="hero-email-address">jane.doe@example.com</span>
@@ -171,19 +177,30 @@
                         <p id="hero-explanation" class="hero-note">
                             Confirmed deliverable via RFC 5321 SMTP handshake (250 OK). Mailbox exists.
                         </p>
+
+                        <!-- Alternative Candidate Emails (All corporate variations) -->
+                        <div id="hero-alternatives-container" class="hero-alternatives-box">
+                            <div class="alternatives-header">
+                                <span>⚡ Other Candidate Email Variations:</span>
+                                <button type="button" id="btn-copy-all-alts" class="btn-text btn-xs">📋 Copy All Permutations</button>
+                            </div>
+                            <div id="hero-alternatives-pills" class="alternatives-pills-row">
+                                <!-- Populated dynamically -->
+                            </div>
+                        </div>
                     </div>
 
                     <!-- Permutation Results Table Card -->
                     <div class="card table-card">
                         <div class="table-header">
-                            <h3>Corporate Permutations Evaluated (<span id="total-count">0</span>)</h3>
+                            <h3>All Corporate Permutations Evaluated (<span id="total-count">0</span>)</h3>
                             <div class="table-actions">
                                 <input type="text" id="table-search" placeholder="Filter candidates..." class="table-filter-input">
-                                <button id="btn-toggle-table" class="btn-text">Show All Permutations</button>
+                                <button id="btn-toggle-table" class="btn-text">Hide Permutations</button>
                             </div>
                         </div>
 
-                        <div id="table-wrapper" class="table-wrapper hidden">
+                        <div id="table-wrapper" class="table-wrapper">
                             <table class="candidates-table">
                                 <thead>
                                     <tr>
@@ -223,16 +240,82 @@
                 </section>
             </div>
 
-            <!-- TAB 2: Batch CSV Discovery -->
+            <!-- TAB 2: Batch Discovery & Interactive Prospect Builder -->
             <div id="tab-bulk" class="tab-panel hidden">
                 <section class="card bulk-card">
-                    <div class="card-header">
-                        <h2>📁 Batch CSV Lead Discovery</h2>
-                        <span class="hint">Upload or paste a list of prospects to discover and verify all emails in parallel</span>
+                    <div class="card-header bulk-card-header">
+                        <div>
+                            <h2>📁 Batch Lead Discovery & Generator</h2>
+                            <span class="hint">Build prospect lists in-app or import existing CSVs to discover all verified email variations</span>
+                        </div>
+                        <div class="bulk-mode-pills">
+                            <button type="button" id="btn-mode-builder" class="mode-pill active">
+                                ✍️ Interactive Prospect Builder
+                            </button>
+                            <button type="button" id="btn-mode-file" class="mode-pill">
+                                📂 Upload / Paste CSV
+                            </button>
+                        </div>
                     </div>
 
-                    <!-- CSV Dropzone & Paste Area -->
-                    <div class="bulk-input-container">
+                    <!-- Mode 1: Interactive Prospect Builder (Default) -->
+                    <div id="bulk-builder-container" class="builder-container">
+                        <div class="builder-toolbar">
+                            <div class="toolbar-left">
+                                <button type="button" id="btn-add-prospect-row" class="btn-secondary btn-sm">
+                                    ➕ Add Prospect Row
+                                </button>
+                                <button type="button" id="btn-load-sample-prospects" class="btn-secondary btn-sm" title="Load sample targets to test immediately">
+                                    🎲 Load Sample Leads
+                                </button>
+                                <button type="button" id="btn-clear-prospect-rows" class="btn-text btn-sm text-danger">
+                                    🗑️ Clear All
+                                </button>
+                            </div>
+                            <div class="toolbar-right">
+                                <span id="builder-row-count" class="badge badge-info">0 Prospects Entered</span>
+                            </div>
+                        </div>
+
+                        <div class="builder-table-wrap">
+                            <table class="builder-table" id="prospect-builder-table">
+                                <thead>
+                                    <tr>
+                                        <th style="width: 36px;">#</th>
+                                        <th style="width: 170px;">First Name <span class="required">*</span></th>
+                                        <th style="width: 170px;">Last Name</th>
+                                        <th style="width: 220px;">Domain / Website <span class="required">*</span></th>
+                                        <th>Person LinkedIn (Optional)</th>
+                                        <th>Company LinkedIn (Optional)</th>
+                                        <th style="width: 44px;"></th>
+                                    </tr>
+                                </thead>
+                                <tbody id="builder-tbody">
+                                    <!-- Dynamic rows inserted via JS -->
+                                </tbody>
+                            </table>
+                        </div>
+
+                        <div class="builder-actions-bar">
+                            <div class="builder-options">
+                                <label class="checkbox-label">
+                                    <input type="checkbox" id="bulk-builder-no-verify">
+                                    <span>Fast Mode (Instant OSINT & Multi-Pattern Discovery without slow SMTP timeouts)</span>
+                                </label>
+                            </div>
+                            <div class="builder-buttons">
+                                <button type="button" id="btn-download-builder-csv" class="btn-secondary" title="Save generated CSV file to your computer">
+                                    💾 Export Generated CSV
+                                </button>
+                                <button type="button" id="btn-start-builder-discovery" class="btn-primary">
+                                    <span>🚀 Auto-Generate & Start Discovery</span>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Mode 2: CSV Dropzone & Paste Area (Hidden by default) -->
+                    <div id="bulk-file-container" class="bulk-input-container hidden">
                         <div id="bulk-dropzone" class="dropzone">
                             <div class="dropzone-icon">📄</div>
                             <div class="dropzone-text">
@@ -249,19 +332,19 @@
                         <div class="form-group">
                             <textarea id="bulk-paste-text" placeholder="Full Name, Company Domain&#10;Jane Doe, example.com&#10;John Smith, acme.org" rows="5" class="bulk-textarea"></textarea>
                         </div>
-                    </div>
 
-                    <div class="bulk-controls">
-                        <div class="bulk-options">
-                            <label class="checkbox-label">
-                                <input type="checkbox" id="bulk-check-no-verify">
-                                <span>Fast Heuristic Mode (Instant OSINT & Pattern Generation without slow network probes)</span>
-                            </label>
-                        </div>
-                        <div class="form-actions">
-                            <button id="btn-start-bulk" class="btn-primary" disabled>
-                                <span>🚀 Start Batch Discovery</span>
-                            </button>
+                        <div class="bulk-controls">
+                            <div class="bulk-options">
+                                <label class="checkbox-label">
+                                    <input type="checkbox" id="bulk-check-no-verify">
+                                    <span>Fast Heuristic Mode (Instant OSINT & Pattern Generation without slow network probes)</span>
+                                </label>
+                            </div>
+                            <div class="form-actions">
+                                <button id="btn-start-bulk" class="btn-primary" disabled>
+                                    <span>🚀 Start Batch Discovery</span>
+                                </button>
+                            </div>
                         </div>
                     </div>
                 </section>
@@ -314,6 +397,7 @@
                                     <th>Confidence</th>
                                     <th>Status</th>
                                     <th>Pattern</th>
+                                    <th>Alternative Permutations</th>
                                     <th>Action</th>
                                 </tr>
                             </thead>

@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/zaidkhan0997/POC-Recon/pkg/models"
@@ -14,16 +15,18 @@ import (
 
 // EnrichedLeadExport represents a flattened, CRM-ready lead record
 type EnrichedLeadExport struct {
-	FullName     string `json:"full_name"`
-	FirstName    string `json:"first_name"`
-	LastName     string `json:"last_name"`
-	Domain       string `json:"domain"`
-	Email        string `json:"email"`
-	Confidence   int    `json:"confidence"`
-	Status       string `json:"status"`
-	Pattern      string `json:"pattern"`
-	MailProvider string `json:"mail_provider"`
-	VerifiedAt   string `json:"verified_at"`
+	FullName          string   `json:"full_name"`
+	FirstName         string   `json:"first_name"`
+	LastName          string   `json:"last_name"`
+	Domain            string   `json:"domain"`
+	Email             string   `json:"email"`
+	Confidence        int      `json:"confidence"`
+	Status            string   `json:"status"`
+	Pattern           string   `json:"pattern"`
+	MailProvider      string   `json:"mail_provider"`
+	VerifiedAt        string   `json:"verified_at"`
+	Alternatives      []string `json:"alternatives,omitempty"`
+	AlternativeEmails string   `json:"alternative_emails,omitempty"`
 }
 
 // ExportBatchToCSV writes verified batch results to any io.Writer in standard CRM CSV format
@@ -41,6 +44,7 @@ func ExportBatchToCSV(results []*models.ReconResult, w io.Writer) error {
 		"Verification Status",
 		"Email Pattern",
 		"Mail Provider",
+		"Alternative Emails",
 		"Verified Date",
 	}
 	if err := writer.Write(header); err != nil {
@@ -71,6 +75,14 @@ func ExportBatchToCSV(results []*models.ReconResult, w io.Writer) error {
 			provider = res.Provider.Name
 		}
 
+		var altEmails []string
+		for _, c := range res.Candidates {
+			if c.Email != "" && !strings.EqualFold(c.Email, bestEmail) {
+				altEmails = append(altEmails, c.Email)
+			}
+		}
+		altStr := strings.Join(altEmails, "; ")
+
 		row := []string{
 			res.Person.FullName,
 			res.Person.FirstName,
@@ -81,6 +93,7 @@ func ExportBatchToCSV(results []*models.ReconResult, w io.Writer) error {
 			status,
 			pattern,
 			provider,
+			altStr,
 			nowStr,
 		}
 
@@ -136,17 +149,26 @@ func ExportBatchToJSONFile(results []*models.ReconResult, filePath string) error
 			provider = res.Provider.Name
 		}
 
+		var altEmails []string
+		for _, c := range res.Candidates {
+			if c.Email != "" && !strings.EqualFold(c.Email, bestEmail) {
+				altEmails = append(altEmails, c.Email)
+			}
+		}
+
 		exports = append(exports, EnrichedLeadExport{
-			FullName:     res.Person.FullName,
-			FirstName:    res.Person.FirstName,
-			LastName:     res.Person.LastName,
-			Domain:       res.TargetDomain,
-			Email:        bestEmail,
-			Confidence:   confidence,
-			Status:       status,
-			Pattern:      pattern,
-			MailProvider: provider,
-			VerifiedAt:   nowStr,
+			FullName:          res.Person.FullName,
+			FirstName:         res.Person.FirstName,
+			LastName:          res.Person.LastName,
+			Domain:            res.TargetDomain,
+			Email:             bestEmail,
+			Confidence:        confidence,
+			Status:            status,
+			Pattern:           pattern,
+			MailProvider:      provider,
+			VerifiedAt:        nowStr,
+			Alternatives:      altEmails,
+			AlternativeEmails: strings.Join(altEmails, "; "),
 		})
 	}
 
