@@ -62,8 +62,21 @@
 
                     <!-- Collapsible Advanced Options -->
                     <details class="advanced-drawer">
-                        <summary>⚙ Advanced Options (Proxy, Offline)</summary>
+                        <summary>⚙ Advanced Options (Pattern, Proxy, Offline)</summary>
                         <div class="advanced-grid">
+                            <div class="form-group">
+                                <label for="input-pattern">Email Pattern Preference (Optional)</label>
+                                <select id="input-pattern" class="input-select" style="background: var(--bg-surface-secondary); color: var(--text-primary); border: 1px solid var(--border-color); border-radius: 8px; padding: 10px; width: 100%;">
+                                    <option value="">Auto-Detect / Corporate Default</option>
+                                    <option value="first">first (e.g. john@company.com)</option>
+                                    <option value="first.last">first.last (e.g. john.doe@company.com)</option>
+                                    <option value="flast">flast (e.g. jdoe@company.com)</option>
+                                    <option value="firstlast">firstlast (e.g. johndoe@company.com)</option>
+                                    <option value="first_last">first_last (e.g. john_doe@company.com)</option>
+                                    <option value="f.last">f.last (e.g. j.doe@company.com)</option>
+                                    <option value="last.first">last.first (e.g. doe.john@company.com)</option>
+                                </select>
+                            </div>
                             <div class="form-group">
                                 <label for="input-proxy">SOCKS5 Proxy URL (Optional)</label>
                                 <input type="text" id="input-proxy" placeholder="socks5://127.0.0.1:1080">

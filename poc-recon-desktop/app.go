@@ -39,6 +39,7 @@ type ReconRequest struct {
 	Name            string `json:"name"`
 	PersonLinkedIn  string `json:"person_linkedin"`
 	CompanyLinkedIn string `json:"company_linkedin"`
+	Pattern         string `json:"pattern"`
 	ProxyURL        string `json:"proxy_url"`
 	NoVerify        bool   `json:"no_verify"`
 }
@@ -50,7 +51,7 @@ type ProgressUpdate struct {
 	Percentage int    `json:"percentage"`
 }
 
-func computeConfidence(status models.VerificationStatus, pattern string, provider *models.ProviderInfo, isCatchAll bool, port25Open bool) int {
+func computeConfidence(status models.VerificationStatus, pattern string, provider *models.ProviderInfo, isCatchAll bool, port25Open bool, preferredPattern string) int {
 	if status == models.StatusValid {
 		return 100
 	}
@@ -74,15 +75,28 @@ func computeConfidence(status models.VerificationStatus, pattern string, provide
 	if !ok {
 		score = 15
 	}
+	if preferredPattern != "" {
+		if strings.EqualFold(pattern, preferredPattern) {
+			score = 90
+		} else if score > 60 {
+			score = 60
+		}
+	}
 	if provider != nil {
+		targetPat := "first.last"
+		if preferredPattern != "" {
+			targetPat = preferredPattern
+		}
 		pLower := strings.ToLower(provider.Name)
 		if strings.Contains(pLower, "google") || strings.Contains(pLower, "workspace") || strings.Contains(pLower, "microsoft") {
-			if pattern == "first.last" {
+			if strings.EqualFold(pattern, targetPat) {
 				score += 5
 			}
 		}
 		if strings.Contains(provider.SPFRecord, "-all") {
-			score += 5
+			if strings.EqualFold(pattern, targetPat) || preferredPattern == "" {
+				score += 5
+			}
 		}
 	}
 	if isCatchAll {
@@ -112,6 +126,18 @@ func (a *App) RunRecon(req ReconRequest) (*models.ReconResult, error) {
 
 	person := parser.ParsePersonName(req.Name)
 	candidates := generator.GenerateEmailPatterns(domain, person)
+	if req.Pattern != "" {
+		var prioritized []models.EmailCandidate
+		var others []models.EmailCandidate
+		for _, c := range candidates {
+			if strings.EqualFold(c.PatternName, req.Pattern) {
+				prioritized = append(prioritized, c)
+			} else {
+				others = append(others, c)
+			}
+		}
+		candidates = append(prioritized, others...)
+	}
 
 	a.emitProgress("dns", fmt.Sprintf("Resolving DNS & MX infrastructure for %s (DoH Fallback)...", domain), 25)
 
@@ -161,7 +187,7 @@ func (a *App) RunRecon(req ReconRequest) (*models.ReconResult, error) {
 		for i := range result.Candidates {
 			result.Candidates[i].Status = models.StatusUnverified
 			result.Candidates[i].SMTPMessage = "Verification skipped (Offline Mode)"
-			result.Candidates[i].Confidence = computeConfidence(models.StatusUnverified, result.Candidates[i].PatternName, provider, isCatchAll, port25Open)
+			result.Candidates[i].Confidence = computeConfidence(models.StatusUnverified, result.Candidates[i].PatternName, provider, isCatchAll, port25Open, req.Pattern)
 		}
 	} else if !port25Open {
 		a.emitProgress("cloud", "Port 25 blocked by network. Engaging HTTPS Cloud & Identity Verifiers...", 60)
@@ -221,7 +247,7 @@ func (a *App) RunRecon(req ReconRequest) (*models.ReconResult, error) {
 			if !resolved {
 				result.Candidates[i].Status = models.StatusPortBlocked
 				result.Candidates[i].SMTPMessage = "Port 25 blocked by ISP; HTTPS alternative checks non-conclusive"
-				result.Candidates[i].Confidence = computeConfidence(models.StatusPortBlocked, pattern, provider, isCatchAll, false)
+				result.Candidates[i].Confidence = computeConfidence(models.StatusPortBlocked, pattern, provider, isCatchAll, false, req.Pattern)
 			}
 
 			if result.Candidates[i].Status == models.StatusValid {
@@ -261,7 +287,7 @@ func (a *App) RunRecon(req ReconRequest) (*models.ReconResult, error) {
 			if !resolved {
 				result.Candidates[i].Status = models.StatusCatchAll
 				result.Candidates[i].SMTPMessage = "Mail server accepts all probes (Catch-All)"
-				result.Candidates[i].Confidence = computeConfidence(models.StatusCatchAll, pattern, provider, isCatchAll, true)
+				result.Candidates[i].Confidence = computeConfidence(models.StatusCatchAll, pattern, provider, isCatchAll, true, req.Pattern)
 			}
 
 			if result.Candidates[i].Status == models.StatusValid {
@@ -279,7 +305,7 @@ func (a *App) RunRecon(req ReconRequest) (*models.ReconResult, error) {
 			result.Candidates[i].Status = status
 			result.Candidates[i].SMTPCode = code
 			result.Candidates[i].SMTPMessage = msg
-			result.Candidates[i].Confidence = computeConfidence(status, result.Candidates[i].PatternName, provider, isCatchAll, port25Open)
+			result.Candidates[i].Confidence = computeConfidence(status, result.Candidates[i].PatternName, provider, isCatchAll, port25Open, req.Pattern)
 
 			if status == models.StatusValid {
 				result.BestCandidate = &result.Candidates[i]

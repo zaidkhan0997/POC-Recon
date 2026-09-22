@@ -79,6 +79,9 @@ class ReconResult:
     verification_method: str = "SMTP (Port 25)"
     candidates: List[CandidateResult] = field(default_factory=list)
     best_candidate: Optional[CandidateResult] = None
+    detected_pattern: Optional[str] = None
+    detected_pattern_source: Optional[str] = None
+    discovered_domain_emails: List[str] = field(default_factory=list)
     timestamp: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
 
     def to_dict(self) -> Dict[str, Any]:
@@ -86,6 +89,9 @@ class ReconResult:
             "timestamp": self.timestamp,
             "domain": self.target_domain,
             "verification_method": self.verification_method,
+            "detected_pattern": self.detected_pattern,
+            "detected_pattern_source": self.detected_pattern_source,
+            "discovered_domain_emails": self.discovered_domain_emails,
             "person": {
                 "first_name": self.person.first_name,
                 "middle_name": self.person.middle_name,
@@ -114,7 +120,8 @@ class ReconResult:
         Returns the single winning/primary working candidate:
         1. Explicit best_candidate if set
         2. First candidate confirmed VALID (100% deliverable)
-        3. Highest ranked candidate / fallback
+        3. Candidate matching detected_pattern with highest confidence
+        4. Highest ranked candidate by confidence
         """
         if self.best_candidate:
             return self.best_candidate
@@ -122,7 +129,13 @@ class ReconResult:
         if valid_candidates:
             return valid_candidates[0]
         if self.candidates:
-            # Sort by confidence descending
-            return max(self.candidates, key=lambda c: c.confidence)
+            # Sort by detected pattern priority first, then confidence descending
+            return max(
+                self.candidates,
+                key=lambda c: (
+                    1 if (self.detected_pattern and c.pattern_name == self.detected_pattern) else 0,
+                    c.confidence
+                )
+            )
         return None
 

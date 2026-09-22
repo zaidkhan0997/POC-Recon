@@ -38,6 +38,8 @@ document.addEventListener("DOMContentLoaded", () => {
         document.getElementById("engine-status").textContent = "Scanning...";
         updateProgress("Initializing reconnaissance...", 5);
 
+        const pattern = document.getElementById("input-pattern")?.value || "";
+
         try {
             if (window.go && window.go.main && window.go.main.App && window.go.main.App.RunRecon) {
                 currentResult = await window.go.main.App.RunRecon({
@@ -45,6 +47,7 @@ document.addEventListener("DOMContentLoaded", () => {
                     name: name,
                     person_linkedin: personLi,
                     company_linkedin: companyLi,
+                    pattern: pattern,
                     proxy_url: proxy,
                     no_verify: noVerify
                 });
@@ -55,7 +58,7 @@ document.addEventListener("DOMContentLoaded", () => {
                 setTimeout(() => {
                     updateProgress("Probing DNS...", 50);
                     setTimeout(() => {
-                        const mock = createMockResult(website, name);
+                        const mock = createMockResult(website, name, pattern);
                         renderResults(mock);
                     }, 800);
                 }, 600);
@@ -213,7 +216,16 @@ function showToast(message) {
     }, 2500);
 }
 
-function createMockResult(domain, name) {
+function createMockResult(domain, name, preferredPattern) {
+    const fn = (name.split(" ")[0] || "user").toLowerCase();
+    const ln = (name.split(" ")[1] || "name").toLowerCase();
+    const pat = preferredPattern || "first.last";
+
+    let email = `${fn}.${ln}@${domain}`;
+    if (pat === "first") email = `${fn}@${domain}`;
+    else if (pat === "flast") email = `${fn[0]}${ln}@${domain}`;
+    else if (pat === "firstlast") email = `${fn}${ln}@${domain}`;
+
     return {
         target_domain: domain,
         person: { full_name: name, first_name: name.split(" ")[0], last_name: name.split(" ")[1] || "" },
@@ -222,15 +234,16 @@ function createMockResult(domain, name) {
         port_25_open: false,
         is_catch_all: false,
         best_candidate: {
-            email: `${name.split(" ")[0].toLowerCase()}.${(name.split(" ")[1] || "user").toLowerCase()}@${domain}`,
-            pattern_name: "first.last",
-            confidence: 95,
-            status: "HIGH CONFIDENCE (95%)",
-            smtp_message: "Port 25 blocked by ISP; Google Workspace standard pattern match"
+            email: email,
+            pattern_name: pat,
+            confidence: 90,
+            status: "TOP CANDIDATE (90%)",
+            smtp_message: "Port 25 blocked by ISP; Selected based on " + (preferredPattern ? "user pattern preference" : "standard provider heuristics")
         },
         candidates: [
-            { email: `${name.split(" ")[0].toLowerCase()}.${(name.split(" ")[1] || "user").toLowerCase()}@${domain}`, pattern_name: "first.last", confidence: 95, status: "HIGH CONFIDENCE", smtp_message: "Port 25 blocked" },
-            { email: `${name.split(" ")[0].toLowerCase()}@${domain}`, pattern_name: "first", confidence: 60, status: "UNVERIFIED", smtp_message: "Port 25 blocked" }
+            { email: email, pattern_name: pat, confidence: 90, status: "TOP CANDIDATE", smtp_message: "Selected pattern" },
+            { email: `${fn}.${ln}@${domain}`, pattern_name: "first.last", confidence: pat === "first.last" ? 90 : 60, status: "UNVERIFIED", smtp_message: "Port 25 blocked" },
+            { email: `${fn}@${domain}`, pattern_name: "first", confidence: pat === "first" ? 90 : 50, status: "UNVERIFIED", smtp_message: "Port 25 blocked" }
         ]
     };
 }

@@ -1,13 +1,14 @@
 import hashlib
 import json
 import logging
+import re
 import socket
 import time
 import urllib.error
 import urllib.parse
 import urllib.request
 import uuid
-from typing import List, Optional, Tuple
+from typing import List, Optional, Tuple, Dict, Set
 
 import dns.exception
 import dns.resolver
@@ -458,18 +459,187 @@ def verify_github_commits(email: str, timeout: float = 5.0) -> Tuple[Optional[Ve
         return None, None, f"GitHub search error: {e}"
 
 
+def extract_pattern_from_localpart(localpart: str) -> Optional[str]:
+    """
+    Classifies an email local-part into a candidate pattern.
+    Ignores generic role accounts (info, support, admin, etc.).
+    """
+    lp = localpart.lower().strip()
+    role_accounts = {
+        "info", "contact", "support", "sales", "admin", "administrator", "help",
+        "billing", "office", "press", "media", "jobs", "careers", "hr", "legal",
+        "security", "privacy", "compliance", "abuse", "postmaster", "hostmaster",
+        "dmarc", "noc", "marketing", "hello", "team", "inquiries", "general",
+        "service", "tech", "mail", "webmaster"
+    }
+    if lp in role_accounts:
+        return None
+
+    if "." in lp:
+        parts = lp.split(".")
+        if len(parts) == 2:
+            p1, p2 = parts[0], parts[1]
+            if len(p1) == 1 and len(p2) > 1:
+                return "f.last"
+            elif len(p1) > 1 and len(p2) == 1:
+                return "first.l"
+            elif len(p1) > 1 and len(p2) > 1:
+                return "first.last"
+        elif len(parts) == 3:
+            return "first.m.last"
+    elif "_" in lp:
+        parts = lp.split("_")
+        if len(parts) == 2:
+            p1, p2 = parts[0], parts[1]
+            if len(p1) == 1 and len(p2) > 1:
+                return "f_last"
+            elif len(p1) > 1 and len(p2) > 1:
+                return "first_last"
+    elif "-" in lp:
+        parts = lp.split("-")
+        if len(parts) == 2:
+            return "first-last"
+    else:
+        # No separator: e.g. zaid (first) or zkhan (flast) or zaidkhan (firstlast)
+        if len(lp) <= 8 and lp.isalpha():
+            return "first"
+        elif len(lp) > 8 and lp.isalpha():
+            return "firstlast"
+
+    return None
+
+
+def detect_domain_email_pattern(
+    domain: str,
+    candidates: Optional[List[Tuple[str, str]]] = None,
+    timeout: float = 3.0
+) -> Tuple[Optional[str], Optional[str], List[str], Optional[Tuple[str, str]]]:
+    """
+    Performs fast, non-intrusive domain reconnaissance to discover public emails,
+    detect corporate email naming conventions, and match the target person directly.
+
+    Returns:
+        (detected_pattern, detected_source, sorted_discovered_emails, direct_candidate_match)
+    """
+    discovered_emails: Set[str] = set()
+    dom_clean = domain.strip().lower()
+    email_regex = re.compile(rf"[a-zA-Z0-9_.+-]+@{re.escape(dom_clean)}", re.IGNORECASE)
+
+    # 1. DNS SOA Record (rname hostmaster/admin)
+    try:
+        resolver = dns.resolver.Resolver()
+        resolver.timeout = timeout
+        resolver.lifetime = timeout
+        soa_answers = resolver.resolve(dom_clean, "SOA")
+        for rdata in soa_answers:
+            rname_str = str(rdata.rname).rstrip(".")
+            if "." in rname_str:
+                parts = rname_str.split(".", 1)
+                candidate_soa = f"{parts[0]}@{parts[1]}".lower()
+                if candidate_soa.endswith(f"@{dom_clean}"):
+                    discovered_emails.add(candidate_soa)
+    except Exception as e:
+        logger.debug(f"DNS SOA query error for {dom_clean}: {e}")
+
+    # 2. DNS DMARC TXT Record (rua/ruf mailto:)
+    try:
+        resolver = dns.resolver.Resolver()
+        resolver.timeout = timeout
+        resolver.lifetime = timeout
+        dmarc_answers = resolver.resolve(f"_dmarc.{dom_clean}", "TXT")
+        for rdata in dmarc_answers:
+            txt_str = "".join([s.decode("utf-8", errors="ignore") if isinstance(s, bytes) else str(s) for s in rdata.strings])
+            for match in email_regex.findall(txt_str):
+                discovered_emails.add(match.lower())
+    except Exception as e:
+        logger.debug(f"DNS DMARC query error for {dom_clean}: {e}")
+
+    # 3. Public OpenPGP Keyserver lookup for domain
+    try:
+        encoded_query = urllib.parse.quote(f"@{dom_clean}")
+        url = f"https://keyserver.ubuntu.com/pks/lookup?search={encoded_query}&op=index&options=mr"
+        req = urllib.request.Request(
+            url,
+            headers={"User-Agent": "POC-Recon-Domain-OSINT/1.0"}
+        )
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            text = resp.read().decode("utf-8", errors="replace")
+            for match in email_regex.findall(text):
+                discovered_emails.add(match.lower())
+    except Exception as e:
+        logger.debug(f"OpenPGP domain query error for {dom_clean}: {e}")
+
+    # 4. Web Scraping (Security.txt, Contact, Homepage)
+    probe_urls = [
+        f"https://{dom_clean}/.well-known/security.txt",
+        f"https://{dom_clean}/security.txt",
+        f"https://{dom_clean}/contact",
+        f"https://{dom_clean}/",
+        f"https://www.{dom_clean}/"
+    ]
+    for p_url in probe_urls:
+        if len(discovered_emails) >= 15:
+            break
+        try:
+            req = urllib.request.Request(
+                p_url,
+                headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) POC-Recon/1.0"}
+            )
+            with urllib.request.urlopen(req, timeout=min(timeout, 2.5)) as resp:
+                content = resp.read(262144).decode("utf-8", errors="ignore")
+                for match in email_regex.findall(content):
+                    discovered_emails.add(match.lower())
+        except Exception:
+            pass
+
+    sorted_discovered = sorted(list(discovered_emails))
+
+    # Check for direct candidate match
+    direct_match = None
+    if candidates:
+        candidate_dict = {email.lower(): pat for email, pat in candidates}
+        for disc_email in sorted_discovered:
+            if disc_email in candidate_dict:
+                direct_match = (disc_email, candidate_dict[disc_email])
+                break
+
+    # Analyze patterns from discovered emails
+    pattern_counts: Dict[str, int] = {}
+    for em in sorted_discovered:
+        lp = em.split("@")[0]
+        pat = extract_pattern_from_localpart(lp)
+        if pat:
+            pattern_counts[pat] = pattern_counts.get(pat, 0) + 1
+
+    detected_pattern = None
+    detected_source = None
+
+    if direct_match:
+        detected_pattern = direct_match[1]
+        detected_source = f"Confirmed exact match in public domain OSINT ({direct_match[0]})"
+    elif pattern_counts:
+        detected_pattern = max(pattern_counts, key=pattern_counts.get)
+        sample_emails = [e for e in sorted_discovered if extract_pattern_from_localpart(e.split("@")[0]) == detected_pattern]
+        detected_source = f"Inferred from {pattern_counts[detected_pattern]} matching domain email(s) (e.g. {', '.join(sample_emails[:2])})"
+
+    return detected_pattern, detected_source, sorted_discovered, direct_match
+
+
 def compute_confidence(
     status: VerificationStatus,
     pattern: str,
     provider: Optional[ProviderInfo] = None,
     is_catch_all: bool = False,
-    port_25_open: bool = True
+    port_25_open: bool = True,
+    preferred_pattern: Optional[str] = None,
+    detected_pattern: Optional[str] = None
 ) -> int:
     """
     Computes deliverability confidence score (0-100%) based on:
     - Verified status (SMTP/Cloud Directory = 100%)
-    - Pattern popularity & corporate standards
-    - Mail provider defaults (Google Workspace / M365 favors first.last)
+    - Active pattern preference or detected domain convention
+    - Base statistical corporate distribution of email patterns
+    - Mail provider heuristics
     - SPF strictness (-all vs ~all)
     - Catch-all discounting
     """
@@ -477,6 +647,8 @@ def compute_confidence(
         return 100
     if status in (VerificationStatus.INVALID, VerificationStatus.NO_MX_RECORD):
         return 0
+
+    active_pattern = (preferred_pattern or detected_pattern or "").strip().lower()
 
     # Base statistical corporate distribution of email patterns
     pattern_weights = {
@@ -497,16 +669,25 @@ def compute_confidence(
         "first.middle.last": 15,
     }
 
-    score = pattern_weights.get(pattern, 15)
+    if active_pattern:
+        if pattern.lower() == active_pattern:
+            score = 90
+        else:
+            base = pattern_weights.get(pattern, 15)
+            score = min(base, 60)
+    else:
+        score = pattern_weights.get(pattern, 15)
 
     # Provider heuristics
     if provider:
         prov_name = provider.name.lower()
+        target_pat = active_pattern if active_pattern else "first.last"
         if any(p in prov_name for p in ["google", "workspace", "microsoft", "office", "exchange"]):
-            if pattern == "first.last":
+            if pattern.lower() == target_pat:
                 score = min(score + 5, 95)
         if provider.spf_record and "-all" in provider.spf_record:
-            score = min(score + 5, 95)
+            if pattern.lower() == target_pat or not active_pattern:
+                score = min(score + 5, 95)
 
     if is_catch_all:
         score = int(score * 0.75)
@@ -543,7 +724,10 @@ def run_alternative_verification(
     provider: Optional[ProviderInfo],
     timeout: float = 5.0,
     delay: float = 0.3,
-    early_exit: bool = False
+    early_exit: bool = False,
+    preferred_pattern: Optional[str] = None,
+    detected_pattern: Optional[str] = None,
+    direct_match: Optional[Tuple[str, str]] = None
 ) -> List[CandidateResult]:
     """
     Executes alternative HTTPS-based verification (M365 Cloud Directory, Gravatar, PGP Keyrings, GitHub Commits).
@@ -574,8 +758,14 @@ def run_alternative_verification(
         code: Optional[int] = None
         msg: str = ""
 
+        # Step 0: Direct match from domain OSINT
+        if direct_match and email.lower() == direct_match[0].lower():
+            status = VerificationStatus.VALID
+            code = 200
+            msg = "Confirmed: Exact match in public domain OSINT records"
+
         # Step 1: M365 Directory Check
-        if is_m365:
+        if status != VerificationStatus.VALID and is_m365:
             m_status, m_code, m_msg = verify_m365_cloud(email, timeout=timeout)
             if m_status is not None:
                 status = m_status
@@ -617,7 +807,9 @@ def run_alternative_verification(
             pattern=pattern,
             provider=provider,
             is_catch_all=False,
-            port_25_open=False
+            port_25_open=False,
+            preferred_pattern=preferred_pattern,
+            detected_pattern=detected_pattern
         )
 
         candidate_obj = CandidateResult(
@@ -648,12 +840,14 @@ def run_verification(
     proxy_url: Optional[str] = None,
     dry_run: bool = False,
     cloud_fallback: bool = True,
-    early_exit: bool = True
+    early_exit: bool = True,
+    preferred_pattern: Optional[str] = None,
+    auto_detect_pattern: bool = True
 ) -> ReconResult:
     """
     Coordinates the end-to-end discovery and verification workflow:
-    1. MX record lookup
-    2. Provider fingerprinting
+    1. MX record lookup & Provider fingerprinting
+    2. Domain OSINT & corporate pattern reconnaissance
     3. Pre-flight Port 25 connectivity check
     4. Catch-All probe
     5. Candidate RCPT TO verification with early-exit on confirmed match
@@ -666,6 +860,30 @@ def run_verification(
         person=person,
         mx_records=mx_records
     )
+
+    # Domain OSINT & pattern discovery
+    direct_match = None
+    if auto_detect_pattern:
+        logger.info(f"Conducting domain pattern OSINT for {domain}...")
+        det_pattern, det_src, disc_emails, direct_match = detect_domain_email_pattern(
+            domain=domain,
+            candidates=candidates,
+            timeout=min(dns_timeout, 3.5)
+        )
+        result.discovered_domain_emails = disc_emails
+        if direct_match:
+            result.detected_pattern = direct_match[1]
+            result.detected_pattern_source = det_src
+            logger.info(f"Direct candidate match discovered via domain OSINT: {direct_match[0]}")
+        elif det_pattern:
+            result.detected_pattern = det_pattern
+            result.detected_pattern_source = det_src
+            logger.info(f"Domain email pattern detected: {det_pattern} ({det_src})")
+
+    if preferred_pattern:
+        result.detected_pattern = preferred_pattern.strip().lower()
+        result.detected_pattern_source = "User-specified pattern preference"
+        logger.info(f"Using preferred email pattern: {result.detected_pattern}")
 
     if not mx_records:
         logger.warning(f"No MX records found for {domain}.")
@@ -689,20 +907,33 @@ def run_verification(
     # Dry-run / pattern-only mode
     if dry_run:
         for email, pattern in candidates:
-            conf = compute_confidence(
-                status=VerificationStatus.SKIPPED,
-                pattern=pattern,
-                provider=provider,
-                is_catch_all=False,
-                port_25_open=result.port_25_open
-            )
+            if direct_match and email.lower() == direct_match[0].lower():
+                cand_st = VerificationStatus.VALID
+                cand_msg = f"Confirmed via domain OSINT ({result.detected_pattern_source})"
+                cand_conf = 100
+                cand_code = 200
+            else:
+                cand_st = VerificationStatus.SKIPPED
+                cand_msg = "Verification skipped in dry-run mode"
+                cand_conf = compute_confidence(
+                    status=cand_st,
+                    pattern=pattern,
+                    provider=provider,
+                    is_catch_all=False,
+                    port_25_open=result.port_25_open,
+                    preferred_pattern=preferred_pattern,
+                    detected_pattern=result.detected_pattern
+                )
+                cand_code = None
+
             result.candidates.append(
                 CandidateResult(
                     email=email,
                     pattern_name=pattern,
-                    status=VerificationStatus.SKIPPED,
-                    smtp_message="Verification skipped in dry-run mode",
-                    confidence=conf
+                    status=cand_st,
+                    smtp_code=cand_code,
+                    smtp_message=cand_msg,
+                    confidence=cand_conf
                 )
             )
         result.best_candidate = result.get_primary_candidate()
@@ -726,27 +957,43 @@ def run_verification(
                 provider=provider,
                 timeout=smtp_timeout,
                 delay=delay,
-                early_exit=early_exit
+                early_exit=early_exit,
+                preferred_pattern=preferred_pattern,
+                detected_pattern=result.detected_pattern,
+                direct_match=direct_match
             )
             result.best_candidate = result.get_primary_candidate()
             return result
         else:
             logger.warning("Port 25 is blocked or unreachable on current network.")
             for email, pattern in candidates:
-                conf = compute_confidence(
-                    status=VerificationStatus.UNVERIFIED_PORT_BLOCKED,
-                    pattern=pattern,
-                    provider=provider,
-                    is_catch_all=False,
-                    port_25_open=False
-                )
+                if direct_match and email.lower() == direct_match[0].lower():
+                    cand_st = VerificationStatus.VALID
+                    cand_msg = f"Confirmed via domain OSINT ({result.detected_pattern_source})"
+                    cand_conf = 100
+                    cand_code = 200
+                else:
+                    cand_st = VerificationStatus.UNVERIFIED_PORT_BLOCKED
+                    cand_msg = "Outbound TCP port 25 blocked by local ISP or cloud firewall"
+                    cand_conf = compute_confidence(
+                        status=cand_st,
+                        pattern=pattern,
+                        provider=provider,
+                        is_catch_all=False,
+                        port_25_open=False,
+                        preferred_pattern=preferred_pattern,
+                        detected_pattern=result.detected_pattern
+                    )
+                    cand_code = None
+
                 result.candidates.append(
                     CandidateResult(
                         email=email,
                         pattern_name=pattern,
-                        status=VerificationStatus.UNVERIFIED_PORT_BLOCKED,
-                        smtp_message="Outbound TCP port 25 blocked by local ISP or cloud firewall",
-                        confidence=conf
+                        status=cand_st,
+                        smtp_code=cand_code,
+                        smtp_message=cand_msg,
+                        confidence=cand_conf
                     )
                 )
             result.best_candidate = result.get_primary_candidate()
@@ -764,6 +1011,23 @@ def run_verification(
 
     # Candidate verification with early-exit
     for i, (email, pattern) in enumerate(candidates):
+        # Check direct OSINT match first
+        if direct_match and email.lower() == direct_match[0].lower():
+            result.candidates.append(
+                CandidateResult(
+                    email=email,
+                    pattern_name=pattern,
+                    status=VerificationStatus.VALID,
+                    smtp_code=200,
+                    smtp_message=f"Confirmed: Exact match in public domain OSINT ({result.detected_pattern_source})",
+                    confidence=100
+                )
+            )
+            if early_exit:
+                result.best_candidate = result.candidates[-1]
+                break
+            continue
+
         if is_catch_all:
             # Attempt HTTPS cloud resolution for catch-all domains (e.g. Microsoft 365, Gravatar, or PGP)
             resolved = False
@@ -843,7 +1107,9 @@ def run_verification(
                 pattern=pattern,
                 provider=provider,
                 is_catch_all=True,
-                port_25_open=True
+                port_25_open=True,
+                preferred_pattern=preferred_pattern,
+                detected_pattern=result.detected_pattern
             )
             result.candidates.append(
                 CandidateResult(
@@ -873,7 +1139,9 @@ def run_verification(
             pattern=pattern,
             provider=provider,
             is_catch_all=False,
-            port_25_open=True
+            port_25_open=True,
+            preferred_pattern=preferred_pattern,
+            detected_pattern=result.detected_pattern
         )
 
         result.candidates.append(

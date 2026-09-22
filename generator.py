@@ -28,12 +28,13 @@ def generate_email_patterns(
     first_name: str,
     middle_name: Optional[str],
     last_name: str,
-    domain: str
+    domain: str,
+    preferred_pattern: Optional[str] = None
 ) -> List[Tuple[str, str]]:
     """
     Generates standard corporate email candidates using parsed name components
     and target domain. Returns a deduplicated list of (email_address, pattern_name) tuples,
-    maintaining corporate priority order.
+    maintaining corporate priority order or elevating a preferred/detected pattern.
     """
     fn = _clean_token(first_name)
     ln = _clean_token(last_name)
@@ -84,5 +85,12 @@ def generate_email_patterns(
         if email_clean not in seen and EMAIL_REGEX.match(email_clean):
             seen.add(email_clean)
             deduped_patterns.append((email_clean, pattern_name))
+
+    # If preferred_pattern is specified, move matching candidate(s) to the front
+    if preferred_pattern:
+        preferred_clean = preferred_pattern.strip().lower()
+        preferred_matches = [p for p in deduped_patterns if p[1].lower() == preferred_clean]
+        other_matches = [p for p in deduped_patterns if p[1].lower() != preferred_clean]
+        deduped_patterns = preferred_matches + other_matches
 
     return deduped_patterns

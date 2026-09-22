@@ -83,6 +83,16 @@ def display_summary_table(
     else:
         table.add_row("Catch-All Status", "[bold green]✔ Disabled / Strict[/bold green]")
 
+    # Domain Pattern Detection / OSINT
+    if getattr(result, "detected_pattern", None):
+        src = f" ({result.detected_pattern_source})" if getattr(result, "detected_pattern_source", None) else ""
+        table.add_row("Company Pattern", f"[bold green]{result.detected_pattern}[/bold green][dim]{src}[/dim]")
+    if getattr(result, "discovered_domain_emails", None):
+        emails_preview = ", ".join(result.discovered_domain_emails[:3])
+        if len(result.discovered_domain_emails) > 3:
+            emails_preview += f" (+{len(result.discovered_domain_emails) - 3} more)"
+        table.add_row("Public Domain Emails", f"[dim]{emails_preview}[/dim]")
+
     console.print(table)
     console.print()
 
@@ -90,14 +100,18 @@ def display_summary_table(
 def display_results_table(result: ReconResult, show_all: bool = False) -> None:
     best = result.get_primary_candidate()
     if best:
-        if best.status == VerificationStatus.VALID:
+        is_verified = (best.status == VerificationStatus.VALID)
+        if is_verified:
             stat_style = "[bold green]CONFIRMED VALID (100% Deliverable)[/bold green]"
+            panel_title = "[bold green]🎯 Primary Working Email Found[/bold green]"
             panel_border = "green"
         elif best.confidence >= 80:
-            stat_style = f"[bold cyan]HIGH CONFIDENCE ({best.confidence}%) - Standard Provider Pattern[/bold cyan]"
+            stat_style = f"[bold cyan]HIGH CONFIDENCE ({best.confidence}%) - {result.detected_pattern_source or 'Pattern Match'}[/bold cyan]"
+            panel_title = "[bold cyan]💡 Top Working Email Candidate[/bold cyan]"
             panel_border = "cyan"
         else:
-            stat_style = f"[yellow]Calculated Candidate ({best.confidence}% confidence)[/yellow]"
+            stat_style = f"[yellow]Heuristic Candidate ({best.confidence}% confidence - Unverified)[/yellow]"
+            panel_title = "[bold yellow]💡 Most Likely Candidate (Unverified - Port 25 Blocked)[/bold yellow]"
             panel_border = "yellow"
 
         diag = best.smtp_message or "Standard corporate pattern match"
@@ -107,11 +121,15 @@ def display_results_table(result: ReconResult, show_all: bool = False) -> None:
 [bold white]Pattern Format:[/bold white] [magenta]{best.pattern_name}[/magenta]
 [bold white]Status        :[/bold white] {stat_style}
 [bold white]Diagnostics   :[/bold white] [dim]{diag}[/dim]"""
-        console.print(Panel(hero_text, title="[bold green]🎯 Primary Working Email Found[/bold green]", border_style=panel_border))
+        console.print(Panel(hero_text, title=panel_title, border_style=panel_border))
         console.print()
 
     if not show_all and result.candidates:
-        console.print(f"[dim]💡 1 working email identified out of {len(result.candidates)} permutations evaluated. Pass [bold]--all[/bold] to inspect all permutations.[/dim]\n")
+        valid_cnt = len(result.get_valid_emails())
+        if valid_cnt > 0:
+            console.print(f"[dim]💡 1 confirmed working email found out of {len(result.candidates)} permutations evaluated. Pass [bold]--all[/bold] to inspect all permutations.[/dim]\n")
+        else:
+            console.print(f"[dim]💡 Top candidate identified out of {len(result.candidates)} permutations evaluated. Pass [bold]--all[/bold] to inspect all permutations.[/dim]\n")
         return
 
     table = Table(title="Candidate Email Verification Outcomes", show_header=True, header_style="bold blue")
@@ -174,10 +192,14 @@ def display_simple_text_summary(
     text_output.append(f"Provider  : {provider_name} | Primary MX: {primary_mx}")
     text_output.append(f"Port 25   : {'Reachable' if result.port_25_open else 'Blocked by ISP'}")
     text_output.append(f"Catch-All : {'Enabled' if result.is_catch_all else 'Disabled/Strict'}")
+    if getattr(result, "detected_pattern", None):
+        text_output.append(f"Pattern   : {result.detected_pattern} ({result.detected_pattern_source or 'Detected'})")
     text_output.append("-" * 72)
 
     if best:
-        text_output.append("🎯 PRIMARY WORKING EMAIL:")
+        is_verified = (best.status == VerificationStatus.VALID)
+        header_title = "🎯 PRIMARY WORKING EMAIL (CONFIRMED VALID):" if is_verified else "💡 TOP WORKING EMAIL CANDIDATE (HEURISTIC ESTIMATE):"
+        text_output.append(header_title)
         text_output.append(f"Email     : {best.email}")
         text_output.append(f"Confidence: {best.confidence}%")
         text_output.append(f"Pattern   : {best.pattern_name}")
@@ -243,6 +265,7 @@ def main() -> None:
     parser.add_argument("--name", "-n", help="Target person's full name (e.g. 'Jane Doe' or 'Dr. John C. Smith, PhD') [REQUIRED]")
     parser.add_argument("--person-linkedin", help="Target person's LinkedIn profile URL (e.g. https://www.linkedin.com/in/jane-doe) [REQUIRED]")
     parser.add_argument("--company-linkedin", help="Target company's LinkedIn URL (e.g. https://www.linkedin.com/company/example) [REQUIRED]")
+    parser.add_argument("--pattern", "-p", help="Corporate email naming pattern if known (e.g. 'first', 'first.last', 'flast', 'firstlast', 'f.last')")
     parser.add_argument("--proxy", help="SOCKS5 proxy URL to bypass Port 25 blocks (e.g. socks5://127.0.0.1:1080)")
     parser.add_argument("--dns-timeout", type=float, default=5.0, help="DNS resolution timeout in seconds (default: 5.0)")
     parser.add_argument("--smtp-timeout", type=float, default=8.0, help="SMTP connection timeout in seconds (default: 8.0)")
@@ -298,8 +321,13 @@ def main() -> None:
                 if not company_linkedin:
                     console.print("[bold red]Error: Company LinkedIn URL is required.[/bold red]")
 
+        if not getattr(args, "pattern", None):
+            pat_in = Prompt.ask("[bold cyan]5. Corporate Email Pattern (optional)[/bold cyan] [dim](e.g. 'first', 'first.last', 'flast', or press Enter to auto-detect)[/dim]", default="auto")
+            if pat_in.lower() != "auto" and pat_in.strip():
+                args.pattern = pat_in.strip()
+
         if not args.no_verify:
-            run_live = Prompt.ask("[bold cyan]5. Run Live SMTP Verification?[/bold cyan] [dim](y: live DNS & SMTP, n: offline pattern dry-run)[/dim]", choices=["y", "n"], default="y")
+            run_live = Prompt.ask("[bold cyan]6. Run Live SMTP Verification?[/bold cyan] [dim](y: live DNS & SMTP, n: offline pattern dry-run)[/dim]", choices=["y", "n"], default="y")
             if run_live.lower() == "n":
                 args.no_verify = True
 
@@ -327,12 +355,14 @@ def main() -> None:
         sys.exit(1)
 
     # Candidate Pattern Generation
-    console.print(f"\n[bold green]Generating corporate email patterns for:[/bold green] [bold white]{person.full_name}[/bold white] @ [bold cyan]{domain}[/bold cyan]")
+    pat_label = f" (Preferred: {args.pattern})" if getattr(args, "pattern", None) else ""
+    console.print(f"\n[bold green]Generating corporate email patterns for:[/bold green] [bold white]{person.full_name}[/bold white] @ [bold cyan]{domain}[/bold cyan]{pat_label}")
     candidates = generate_email_patterns(
         first_name=person.first_name,
         middle_name=person.middle_name,
         last_name=person.last_name,
-        domain=domain
+        domain=domain,
+        preferred_pattern=getattr(args, "pattern", None)
     )
 
     if not candidates:
@@ -353,7 +383,8 @@ def main() -> None:
             delay=args.delay,
             proxy_url=args.proxy,
             dry_run=args.no_verify,
-            cloud_fallback=not args.no_cloud_fallback
+            cloud_fallback=not args.no_cloud_fallback,
+            preferred_pattern=getattr(args, "pattern", None)
         )
 
     # Screen Display: Summary Table
