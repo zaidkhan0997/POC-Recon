@@ -76,6 +76,7 @@ function setupSingleRecon() {
         const personLi = document.getElementById("input-person-li").value.trim();
         const companyLi = document.getElementById("input-company-li").value.trim();
         const proxy = document.getElementById("input-proxy").value.trim();
+        const reacher = document.getElementById("input-reacher")?.value.trim() || "";
         const noVerify = document.getElementById("check-no-verify").checked;
 
         if (!website || !name) {
@@ -100,6 +101,7 @@ function setupSingleRecon() {
                     company_linkedin: companyLi,
                     pattern: pattern,
                     proxy_url: proxy,
+                    reacher_url: reacher,
                     no_verify: noVerify
                 });
                 renderResults(currentResult);

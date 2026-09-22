@@ -54,12 +54,16 @@ func GenerateEmailPatterns(domain string, person models.NameParts, preferredPatt
 			rawPattern{"flast", fInit + last},
 			rawPattern{"firstlast", first + last},
 			rawPattern{"first_last", first + "_" + last},
+			rawPattern{"first-last", first + "-" + last},
 			rawPattern{"last.first", last + "." + first},
 			rawPattern{"f.last", fInit + "." + last},
 			rawPattern{"last", last},
 			rawPattern{"lfirst", lInit + first},
 			rawPattern{"first.l", first + "." + lInit},
 			rawPattern{"f_last", fInit + "_" + last},
+			rawPattern{"lastfirst", last + first},
+			rawPattern{"last_first", last + "_" + first},
+			rawPattern{"last-first", last + "-" + first},
 		)
 
 		if middle != "" {
@@ -69,6 +73,7 @@ func GenerateEmailPatterns(domain string, person models.NameParts, preferredPatt
 				rawPattern{"firstmlast", first + mInit + last},
 				rawPattern{"fmlast", fInit + mInit + last},
 				rawPattern{"first.middle.last", first + "." + middle + "." + last},
+				rawPattern{"first-m-last", first + "-" + mInit + "-" + last},
 			)
 		}
 	} else {

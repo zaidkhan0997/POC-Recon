@@ -46,6 +46,7 @@ type ReconRequest struct {
 	CompanyLinkedIn string `json:"company_linkedin"`
 	Pattern         string `json:"pattern"`
 	ProxyURL        string `json:"proxy_url"`
+	ReacherURL      string `json:"reacher_url"`
 	NoVerify        bool   `json:"no_verify"`
 }
 
@@ -89,11 +90,11 @@ func (a *App) RunRecon(req ReconRequest) (*models.ReconResult, error) {
 		}
 	}
 
-	// 2. Automated OSINT Pattern Detection (DMARC, PGP Keyservers, Security/Web records)
+	// 2. Automated OSINT Pattern Detection (DMARC, PGP Keyservers, Security/Web records, CT logs)
 	detectedPattern := ""
 	directMatch := ""
 	if activePattern == "" && !req.NoVerify {
-		a.emitProgress("osint", fmt.Sprintf("Scanning public OSINT records (DMARC, PGP, Web) for %s naming conventions...", domain), 15)
+		a.emitProgress("osint", fmt.Sprintf("Scanning public OSINT records (DMARC, PGP, Web, CT logs) for %s naming conventions...", domain), 15)
 		pat, _, _, exact := osint.DetectDomainPattern(domain, person, 4*time.Second)
 		if pat != "" {
 			detectedPattern = pat
@@ -168,73 +169,78 @@ func (a *App) RunRecon(req ReconRequest) (*models.ReconResult, error) {
 			result.Candidates[i].SMTPMessage = "Verification skipped (Offline Mode)"
 			result.Candidates[i].Confidence = scorer.ComputeConfidence(models.StatusUnverified, result.Candidates[i].PatternName, provider, isCatchAll, port25Open, activePattern, detectedPattern)
 		}
-	} else if !port25Open {
-		a.emitProgress("cloud", "Port 25 blocked by network. Engaging HTTPS Cloud & Identity Verifiers...", 60)
-		result.VerificationMethod = "HTTPS Cloud & Identity Verifiers (Port 443)"
-
-		isM365 := false
-		if provider != nil && strings.Contains(strings.ToLower(provider.Name), "microsoft") {
-			isM365 = true
-		}
+	} else if req.ReacherURL != "" {
+		a.emitProgress("reacher", fmt.Sprintf("Connecting to self-hosted Reacher engine at %s...", req.ReacherURL), 60)
+		result.VerificationMethod = "Self-Hosted Reacher (Docker HTTP)"
 
 		for i := range result.Candidates {
-			email := result.Candidates[i].Email
-			pattern := result.Candidates[i].PatternName
-			pct := 60 + int(float64(i+1)/float64(total)*30)
-			a.emitProgress("eval", fmt.Sprintf("Checking candidate %d/%d: %s", i+1, total, email), pct)
+			pct := 60 + int(float64(i+1)/float64(total)*35)
+			a.emitProgress("reacher-eval", fmt.Sprintf("Reacher testing %d/%d: %s", i+1, total, result.Candidates[i].Email), pct)
 
-			resolved := false
-			if isM365 {
-				st, code, msg := verifier.VerifyM365(email, 5*time.Second)
+			st, code, msg, err := verifier.VerifyReacher(context.Background(), result.Candidates[i].Email, req.ReacherURL, req.ProxyURL, 8*time.Second)
+			if err == nil {
+				result.Candidates[i].Status = st
+				result.Candidates[i].SMTPCode = code
+				result.Candidates[i].SMTPMessage = msg
 				if st == models.StatusValid {
-					result.Candidates[i].Status = models.StatusValid
-					result.Candidates[i].SMTPCode = code
-					result.Candidates[i].SMTPMessage = msg
 					result.Candidates[i].Confidence = 100
-					resolved = true
-				} else if st == models.StatusInvalid {
-					result.Candidates[i].Status = models.StatusInvalid
-					result.Candidates[i].SMTPCode = code
-					result.Candidates[i].SMTPMessage = msg
-					result.Candidates[i].Confidence = 0
-					resolved = true
+					result.BestCandidate = &result.Candidates[i]
+					break // Short-circuit on first confirmed safe address!
 				}
 			}
+		}
+	} else if port25Open {
+		a.emitProgress("smtp", "Port 25 Open. Verifying mailboxes via AfterShip Pure-Go SMTP...", 60)
+		result.VerificationMethod = "AfterShip Pure-Go SMTP (RFC 5321)"
+		primaryMX := mxList[0].Host
 
-			if !resolved {
-				st, code, msg := verifier.VerifyGravatar(email, 3*time.Second)
-				if st == models.StatusValid {
-					result.Candidates[i].Status = models.StatusValid
-					result.Candidates[i].SMTPCode = code
-					result.Candidates[i].SMTPMessage = msg
-					result.Candidates[i].Confidence = 100
-					resolved = true
-				}
+		for i := range result.Candidates {
+			pct := 60 + int(float64(i+1)/float64(total)*35)
+			a.emitProgress("smtp-eval", fmt.Sprintf("Probing mailbox %d/%d: %s", i+1, total, result.Candidates[i].Email), pct)
+
+			st, code, msg := verifier.VerifyAfterShip(context.Background(), result.Candidates[i].Email, req.ProxyURL, 6*time.Second)
+			if st == models.StatusUnverified || st == models.StatusTimeout {
+				st, code, msg = verifier.VerifyEmail(context.Background(), primaryMX, domain, result.Candidates[i].Email, 6*time.Second, req.ProxyURL)
 			}
+			result.Candidates[i].Status = st
+			result.Candidates[i].SMTPCode = code
+			result.Candidates[i].SMTPMessage = msg
+			result.Candidates[i].Confidence = scorer.ComputeConfidence(st, result.Candidates[i].PatternName, provider, isCatchAll, port25Open, activePattern, detectedPattern)
 
-			if !resolved {
-				st, code, msg := verifier.VerifyPGPKeyring(email, 3*time.Second)
-				if st == models.StatusValid {
-					result.Candidates[i].Status = models.StatusValid
-					result.Candidates[i].SMTPCode = code
-					result.Candidates[i].SMTPMessage = msg
-					result.Candidates[i].Confidence = 100
-					resolved = true
-				}
-			}
-
-			if !resolved {
-				result.Candidates[i].Status = models.StatusPortBlocked
-				result.Candidates[i].SMTPMessage = "Port 25 filtered by ISP; heuristic candidate evaluated"
-				result.Candidates[i].Confidence = scorer.ComputeConfidence(models.StatusPortBlocked, pattern, provider, isCatchAll, false, activePattern, detectedPattern)
-			}
-
-			if result.Candidates[i].Status == models.StatusValid {
+			if st == models.StatusValid {
 				result.BestCandidate = &result.Candidates[i]
 				break // Early-exit
 			}
+			time.Sleep(200 * time.Millisecond)
 		}
-	} else if isCatchAll {
+	} else if !port25Open {
+		a.emitProgress("cloud", "Port 25 blocked by network. Engaging Multi-Signal Engine (M365, Gravatar, PGP)...", 60)
+		result.VerificationMethod = "Free Multi-Signal Verification (M365 + Gravatar + PGP)"
+
+		for i := range result.Candidates {
+			email := result.Candidates[i].Email
+			pct := 60 + int(float64(i+1)/float64(total)*30)
+			a.emitProgress("eval", fmt.Sprintf("Multi-Signal testing %d/%d: %s", i+1, total, email), pct)
+
+			st, conf, msg := verifier.MultiSignalCheck(context.Background(), email, 4*time.Second)
+			if st == models.StatusValid {
+				result.Candidates[i].Status = models.StatusValid
+				result.Candidates[i].Confidence = conf
+				result.Candidates[i].SMTPMessage = msg
+				code := 200
+				result.Candidates[i].SMTPCode = &code
+				result.BestCandidate = &result.Candidates[i]
+				break // Short circuit on high-confidence confirmed identity!
+			} else if st == models.StatusInvalid {
+				result.Candidates[i].Status = models.StatusInvalid
+				result.Candidates[i].Confidence = 0
+				result.Candidates[i].SMTPMessage = msg
+			} else {
+				result.Candidates[i].Status = models.StatusPortBlocked
+				result.Candidates[i].SMTPMessage = msg
+				result.Candidates[i].Confidence = scorer.ComputeConfidence(models.StatusPortBlocked, result.Candidates[i].PatternName, provider, isCatchAll, false, activePattern, detectedPattern)
+			}
+		}
 		a.emitProgress("cloud", "Catch-All domain. Verifying identities via Cloud APIs...", 60)
 		for i := range result.Candidates {
 			email := result.Candidates[i].Email

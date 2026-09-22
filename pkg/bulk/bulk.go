@@ -10,6 +10,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/zaidkhan0997/POC-Recon/internal/cloud"
 	"github.com/zaidkhan0997/POC-Recon/internal/dns"
 	"github.com/zaidkhan0997/POC-Recon/internal/generator"
 	"github.com/zaidkhan0997/POC-Recon/internal/osint"
@@ -285,6 +286,7 @@ func ProcessSingleLead(ctx context.Context, target LeadTarget, proxyURL string, 
 	}
 
 	if port25Open && primaryMX != "" && !isCatchAll && !noVerify {
+		afterShip := smtp.NewAfterShipVerifier(proxyURL, 5*time.Second)
 		verifier := smtp.NewVerifier(proxyURL, 5*time.Second, 150*time.Millisecond)
 		for i := range candidates {
 			select {
@@ -297,7 +299,10 @@ func ProcessSingleLead(ctx context.Context, target LeadTarget, proxyURL string, 
 				continue
 			}
 
-			status, code, msg := verifier.VerifyEmail(ctx, candidates[i].Email, primaryMX, isCatchAll)
+			status, code, msg := afterShip.VerifyEmail(ctx, candidates[i].Email)
+			if status == models.StatusUnverified || status == models.StatusTimeout {
+				status, code, msg = verifier.VerifyEmail(ctx, candidates[i].Email, primaryMX, isCatchAll)
+			}
 			candidates[i].Status = status
 			candidates[i].SMTPCode = code
 			candidates[i].SMTPMessage = msg
@@ -305,6 +310,35 @@ func ProcessSingleLead(ctx context.Context, target LeadTarget, proxyURL string, 
 			if status == models.StatusValid {
 				activePattern = candidates[i].PatternName
 				break
+			}
+		}
+	} else if !port25Open && !noVerify {
+		for i := range candidates {
+			select {
+			case <-ctx.Done():
+				break
+			default:
+			}
+
+			if candidates[i].Status == models.StatusValid {
+				continue
+			}
+
+			msRes := cloud.MultiSignalCheck(ctx, candidates[i].Email, 3*time.Second)
+			if msRes.Status == models.StatusValid {
+				candidates[i].Status = models.StatusValid
+				candidates[i].Confidence = msRes.Confidence
+				candidates[i].SMTPMessage = msRes.ConfirmedMethod
+				code := 200
+				candidates[i].SMTPCode = &code
+				activePattern = candidates[i].PatternName
+				break
+			} else if msRes.Status == models.StatusInvalid {
+				candidates[i].Status = models.StatusInvalid
+				candidates[i].Confidence = 0
+				code := 404
+				candidates[i].SMTPCode = &code
+				candidates[i].SMTPMessage = msRes.ConfirmedMethod
 			}
 		}
 	}

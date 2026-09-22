@@ -7,21 +7,26 @@ import (
 )
 
 var defaultWeights = map[string]int{
-	"first.last":        75,
-	"first":             70,
-	"flast":             65,
+	"first.last":        70,
+	"flast":             68,
+	"first":             65,
 	"firstlast":         60,
+	"f.last":            58,
 	"first_last":        55,
+	"first-last":        55,
 	"last.first":        50,
-	"f.last":            50,
 	"last":              40,
 	"lfirst":            35,
 	"first.l":           35,
 	"f_last":            30,
+	"lastfirst":         30,
+	"last_first":        28,
+	"last-first":        28,
 	"first.m.last":      25,
 	"firstmlast":        20,
 	"fmlast":            20,
 	"first.middle.last": 15,
+	"first-m-last":      15,
 }
 
 func ComputeConfidence(
@@ -63,19 +68,25 @@ func ComputeConfidence(
 				score = 40
 			}
 		} else {
-			// No pattern confirmed: balanced heuristic range (32% - 50%)
+			// No pattern confirmed: balanced heuristic range (28% - 50%)
 			unverifiedWeights := map[string]int{
-				"first.last": 50,
-				"first":      48,
-				"flast":      46,
-				"firstlast":  44,
-				"last":       42,
-				"first_last": 40,
-				"last.first": 38,
-				"f.last":     36,
-				"first.l":    34,
-				"lfirst":     32,
-				"f_last":     30,
+				"first.last":        50,
+				"flast":             48,
+				"first":             48,
+				"firstlast":         45,
+				"f.last":            44,
+				"first_last":        42,
+				"first-last":        42,
+				"last":              40,
+				"last.first":        38,
+				"first.l":           35,
+				"lfirst":            34,
+				"f_last":            32,
+				"lastfirst":         30,
+				"last_first":        28,
+				"last-first":        28,
+				"first.m.last":      25,
+				"first-m-last":      20,
 			}
 			if w, ok := unverifiedWeights[patLower]; ok {
 				score = w

@@ -57,3 +57,38 @@ func TestPreferredPatternElevation(t *testing.T) {
 		t.Errorf("expected first candidate to be zaid@company.com, got %s", cands[0].Email)
 	}
 }
+
+func TestNewHyphenAndReversedPatterns(t *testing.T) {
+	person := models.NameParts{
+		FirstName:  "Mohd",
+		MiddleName: "Zaid",
+		LastName:   "Khan",
+		FullName:   "Mohd Zaid Khan",
+	}
+
+	cands := GenerateEmailPatterns("oneirohire.com", person, "")
+	expectedMap := map[string]string{
+		"first-last":   "mohd-khan@oneirohire.com",
+		"lastfirst":    "khanmohd@oneirohire.com",
+		"last_first":   "khan_mohd@oneirohire.com",
+		"last-first":   "khan-mohd@oneirohire.com",
+		"first-m-last": "mohd-z-khan@oneirohire.com",
+	}
+
+	foundMap := make(map[string]bool)
+	for _, c := range cands {
+		if exp, exists := expectedMap[c.PatternName]; exists {
+			if c.Email == exp {
+				foundMap[c.PatternName] = true
+			} else {
+				t.Errorf("pattern %s generated %s, expected %s", c.PatternName, c.Email, exp)
+			}
+		}
+	}
+
+	for pat := range expectedMap {
+		if !foundMap[pat] {
+			t.Errorf("expected pattern %s was not found or incorrect", pat)
+		}
+	}
+}

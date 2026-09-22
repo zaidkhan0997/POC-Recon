@@ -19,6 +19,7 @@ type Config struct {
 	Proxy           string
 	RelayURL        string
 	RelayToken      string
+	ReacherURL      string
 	DNSTimeout      time.Duration
 	SMTPTimeout     time.Duration
 	Delay           time.Duration
@@ -45,6 +46,7 @@ func ParseFlags() (*Config, error) {
 		proxy           string
 		relayURL        string
 		relayToken      string
+		reacherURL      string
 		dnsTimeoutSec   int
 		smtpTimeoutSec  int
 		delayMs         int
@@ -81,6 +83,7 @@ func ParseFlags() (*Config, error) {
 	flag.StringVar(&proxy, "proxy", "", "SOCKS5 proxy URL (e.g. socks5://127.0.0.1:1080)")
 	flag.StringVar(&relayURL, "relay-url", "", "Cloud relay fallback endpoint URL")
 	flag.StringVar(&relayToken, "relay-token", "", "Bearer token for cloud relay")
+	flag.StringVar(&reacherURL, "reacher-url", "", "Self-hosted Reacher (check-if-email-exists) HTTP API URL (e.g. http://localhost:8080)")
 
 	flag.IntVar(&dnsTimeoutSec, "dns-timeout", 5, "DNS resolution timeout in seconds")
 	flag.IntVar(&smtpTimeoutSec, "smtp-timeout", 10, "SMTP connection timeout in seconds")
@@ -114,6 +117,9 @@ func ParseFlags() (*Config, error) {
 	if relayToken == "" {
 		relayToken = os.Getenv("POC_RECON_RELAY_TOKEN")
 	}
+	if reacherURL == "" {
+		reacherURL = os.Getenv("POC_RECON_REACHER_URL")
+	}
 
 	if website == "" && domain != "" {
 		website = domain
@@ -127,6 +133,7 @@ func ParseFlags() (*Config, error) {
 	cfg.Proxy = strings.TrimSpace(proxy)
 	cfg.RelayURL = strings.TrimSpace(relayURL)
 	cfg.RelayToken = strings.TrimSpace(relayToken)
+	cfg.ReacherURL = strings.TrimSpace(reacherURL)
 	cfg.DNSTimeout = time.Duration(dnsTimeoutSec) * time.Second
 	cfg.SMTPTimeout = time.Duration(smtpTimeoutSec) * time.Second
 	cfg.Delay = time.Duration(delayMs) * time.Millisecond

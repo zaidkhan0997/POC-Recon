@@ -55,7 +55,13 @@ func ExtractPatternFromLocalPart(lp string) string {
 	} else if strings.Contains(lp, "-") {
 		parts := strings.Split(lp, "-")
 		if len(parts) == 2 {
-			return "first-last"
+			if len(parts[0]) == 1 && len(parts[1]) > 1 {
+				return "f-last"
+			} else if len(parts[0]) > 1 && len(parts[1]) > 1 {
+				return "first-last"
+			}
+		} else if len(parts) == 3 {
+			return "first-m-last"
 		}
 	} else {
 		// Single token: e.g. zaid (first) or zkhan (flast) or compound
@@ -115,11 +121,16 @@ func DetectDomainEmailPattern(
 		}
 	}
 
-	// 3. Web scraping (Security.txt, contact, homepage)
+	// 3. Web scraping (Security.txt, contact, about, team, homepage)
 	probeURLs := []string{
 		fmt.Sprintf("https://%s/.well-known/security.txt", domClean),
 		fmt.Sprintf("https://%s/security.txt", domClean),
 		fmt.Sprintf("https://%s/contact", domClean),
+		fmt.Sprintf("https://%s/contact-us", domClean),
+		fmt.Sprintf("https://%s/about", domClean),
+		fmt.Sprintf("https://%s/team", domClean),
+		fmt.Sprintf("https://%s/people", domClean),
+		fmt.Sprintf("https://%s/company", domClean),
 		fmt.Sprintf("https://%s/", domClean),
 	}
 
@@ -141,6 +152,26 @@ func DetectDomainEmailPattern(
 			matches := emailRegex.FindAllString(string(body), -1)
 			for _, m := range matches {
 				discovered[strings.ToLower(m)] = true
+			}
+		}
+	}
+
+	// 4. Certificate Transparency Log search (crt.sh)
+	if len(discovered) < 15 {
+		crtURL := fmt.Sprintf("https://crt.sh/?q=%%25.%s&output=json", url.QueryEscape(domClean))
+		crtClient := &http.Client{Timeout: 3 * time.Second}
+		cReq, err := http.NewRequest("GET", crtURL, nil)
+		if err == nil {
+			cReq.Header.Set("User-Agent", "POC-Recon-CT-Log-OSINT/1.0")
+			resp, err := crtClient.Do(cReq)
+			if err == nil {
+				lr := io.LimitReader(resp.Body, 524288) // 512KB limit
+				body, _ := io.ReadAll(lr)
+				resp.Body.Close()
+				matches := emailRegex.FindAllString(string(body), -1)
+				for _, m := range matches {
+					discovered[strings.ToLower(m)] = true
+				}
 			}
 		}
 	}

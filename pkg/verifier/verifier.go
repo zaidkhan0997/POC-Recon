@@ -57,3 +57,21 @@ func VerifyGitHub(email string, timeout time.Duration) (models.VerificationStatu
 func VerifyCloudRelay(email string, relayURL string, token string, timeout time.Duration) (models.VerificationStatus, *int, string) {
 	return cloud.VerifyCloudRelay(email, relayURL, token, timeout)
 }
+
+// VerifyAfterShip performs pure-Go industrial SMTP verification via AfterShip/email-verifier
+func VerifyAfterShip(ctx context.Context, email string, proxyURL string, timeout time.Duration) (models.VerificationStatus, *int, string) {
+	v := smtp.NewAfterShipVerifier(proxyURL, timeout)
+	return v.VerifyEmail(ctx, email)
+}
+
+// VerifyReacher sends verification request to self-hosted Reacher container (Docker HTTP API)
+func VerifyReacher(ctx context.Context, email, reacherURL, proxyURL string, timeout time.Duration) (models.VerificationStatus, *int, string, error) {
+	client := cloud.NewReacherClient(reacherURL, proxyURL, timeout)
+	return client.CheckEmail(ctx, email)
+}
+
+// MultiSignalCheck performs multi-signal identity verification (Microsoft 365, Gravatar, OpenPGP) without Port 25
+func MultiSignalCheck(ctx context.Context, email string, timeout time.Duration) (models.VerificationStatus, int, string) {
+	res := cloud.MultiSignalCheck(ctx, email, timeout)
+	return res.Status, res.Confidence, res.ConfirmedMethod
+}

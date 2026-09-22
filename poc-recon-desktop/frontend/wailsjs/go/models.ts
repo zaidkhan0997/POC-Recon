@@ -126,6 +126,7 @@ export namespace main {
 	    company_linkedin: string;
 	    pattern: string;
 	    proxy_url: string;
+	    reacher_url: string;
 	    no_verify: boolean;
 	
 	    static createFrom(source: any = {}) {
@@ -140,6 +141,7 @@ export namespace main {
 	        this.company_linkedin = source["company_linkedin"];
 	        this.pattern = source["pattern"];
 	        this.proxy_url = source["proxy_url"];
+	        this.reacher_url = source["reacher_url"];
 	        this.no_verify = source["no_verify"];
 	    }
 	}

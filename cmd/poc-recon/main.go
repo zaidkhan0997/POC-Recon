@@ -136,7 +136,37 @@ func main() {
 	verificationMethod := "Local Heuristic Evaluation"
 
 	// 4. Verification Engine
-	if !cfg.NoVerify && len(mxRecords) > 0 {
+	if !cfg.NoVerify && cfg.ReacherURL != "" {
+		fmt.Printf("🐳 Engaging self-hosted Reacher verification engine at %s...\n", cfg.ReacherURL)
+		verificationMethod = "Self-Hosted Reacher (Docker HTTP)"
+		reacherClient := cloud.NewReacherClient(cfg.ReacherURL, cfg.Proxy, cfg.SMTPTimeout)
+
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+
+		for i := range candidates {
+			select {
+			case <-ctx.Done():
+				break
+			default:
+			}
+			if candidates[i].Status == models.StatusValid {
+				continue
+			}
+			status, code, msg, err := reacherClient.CheckEmail(ctx, candidates[i].Email)
+			if err == nil {
+				candidates[i].Status = status
+				candidates[i].SMTPCode = code
+				candidates[i].SMTPMessage = msg
+				if status == models.StatusValid {
+					candidates[i].Confidence = 100
+					fmt.Printf("🎯 Validated mailbox via Reacher: %s (Status: %s)\n", candidates[i].Email, status)
+					cancel() // Short circuit on first valid email!
+					break
+				}
+			}
+		}
+	} else if !cfg.NoVerify && len(mxRecords) > 0 {
 		primaryMX := mxRecords[0].Host
 		verifier := smtp.NewVerifier(cfg.Proxy, cfg.SMTPTimeout, cfg.Delay)
 
@@ -144,8 +174,8 @@ func main() {
 		port25Open = verifier.CheckPort25(primaryMX)
 
 		if port25Open {
-			verificationMethod = "RFC 5321 Direct SMTP Handshake"
-			fmt.Println("✅ Port 25 is OPEN. Performing direct mailbox probing...")
+			verificationMethod = "AfterShip Pure-Go SMTP (RFC 5321)"
+			fmt.Println("✅ Port 25 is OPEN. Performing direct mailbox probing via AfterShip...")
 
 			// Catch-all check
 			isCatchAll = verifier.CheckCatchAll(domain, primaryMX)
@@ -153,68 +183,43 @@ func main() {
 				fmt.Println("⚠️  Domain has CATCH-ALL enabled. Verifications will be flagged accordingly.")
 			}
 
-			// If direct match was already confirmed, we can skip or verify only that one
+			afterShipVerifier := smtp.NewAfterShipVerifier(cfg.Proxy, cfg.SMTPTimeout)
 			ctx, cancel := context.WithCancel(context.Background())
 			defer cancel()
 
-			// Concurrency worker pool
-			type task struct {
-				index int
-				cand  *models.CandidateResult
-			}
-
-			taskChan := make(chan task, len(candidates))
 			for i := range candidates {
-				// If already valid from direct OSINT, don't re-verify
+				select {
+				case <-ctx.Done():
+					break
+				default:
+				}
 				if candidates[i].Status == models.StatusValid {
 					continue
 				}
-				taskChan <- task{index: i, cand: &candidates[i]}
+
+				status, code, msg := afterShipVerifier.VerifyEmail(ctx, candidates[i].Email)
+				// Fall back to native verifier if AfterShip was inconclusive
+				if status == models.StatusUnverified || status == models.StatusTimeout {
+					status, code, msg = verifier.VerifyEmail(ctx, candidates[i].Email, primaryMX, isCatchAll)
+				}
+
+				candidates[i].Status = status
+				candidates[i].SMTPCode = code
+				candidates[i].SMTPMessage = msg
+
+				if status == models.StatusValid {
+					candidates[i].Confidence = 100
+					fmt.Printf("🎯 Validated mailbox: %s (Status: %s)\n", candidates[i].Email, status)
+					cancel() // Early exit for remaining permutations!
+					break
+				}
 			}
-			close(taskChan)
-
-			var workerWg sync.WaitGroup
-			workerCount := cfg.Concurrency
-			if workerCount > len(candidates) {
-				workerCount = len(candidates)
-			}
-
-			var verifiedOnce sync.Once
-
-			for w := 0; w < workerCount; w++ {
-				workerWg.Add(1)
-				go func() {
-					defer workerWg.Done()
-					for t := range taskChan {
-						select {
-						case <-ctx.Done():
-							t.cand.Status = models.StatusSkipped
-							t.cand.SMTPMessage = "Skipped (Valid email already verified)"
-							continue
-						default:
-						}
-
-						status, code, msg := verifier.VerifyEmail(ctx, t.cand.Email, primaryMX, isCatchAll)
-						t.cand.Status = status
-						t.cand.SMTPCode = code
-						t.cand.SMTPMessage = msg
-
-						if status == models.StatusValid {
-							verifiedOnce.Do(func() {
-								fmt.Printf("🎯 Validated mailbox: %s (Status: %s)\n", t.cand.Email, status)
-								cancel() // Early exit for remaining permutations!
-							})
-						}
-					}
-				}()
-			}
-			workerWg.Wait()
 
 		} else {
 			// Port 25 blocked by ISP/Firewall
 			fmt.Println("🛡️  Port 25 blocked by local network/ISP.")
 
-			// Check for Cloud Relay or SOCKS5 fallback
+			// Check for Cloud Relay
 			if cfg.RelayURL != "" && !cfg.NoCloudFallback {
 				fmt.Println("☁️  Routing through Cloud Relay verification...")
 				verificationMethod = "Cloud Relay RFC 5321 Verification"
@@ -246,8 +251,40 @@ func main() {
 				}
 				relayWg.Wait()
 			} else {
-				fmt.Println("ℹ️  Applying high-fidelity OSINT pattern & heuristic confidence scoring...")
-				verificationMethod = "High-Fidelity OSINT Heuristics"
+				// Seamless.ai-style Free Multi-Signal Engine (M365 + Gravatar + OpenPGP)
+				fmt.Println("⚡ Engaging free Multi-Signal verification (Microsoft 365 + Gravatar + OpenPGP)...")
+				verificationMethod = "Free Multi-Signal Verification (M365 + Gravatar + PGP)"
+				ctx, cancel := context.WithCancel(context.Background())
+				defer cancel()
+
+				for i := range candidates {
+					select {
+					case <-ctx.Done():
+						break
+					default:
+					}
+					if candidates[i].Status == models.StatusValid {
+						continue
+					}
+
+					msRes := cloud.MultiSignalCheck(ctx, candidates[i].Email, 4*time.Second)
+					if msRes.Status == models.StatusValid {
+						candidates[i].Status = models.StatusValid
+						candidates[i].Confidence = msRes.Confidence
+						candidates[i].SMTPMessage = msRes.ConfirmedMethod
+						code := 200
+						candidates[i].SMTPCode = &code
+						fmt.Printf("🎯 Validated candidate via Multi-Signal: %s (%s)\n", candidates[i].Email, msRes.ConfirmedMethod)
+						cancel() // Short circuit on confirmed valid candidate!
+						break
+					} else if msRes.Status == models.StatusInvalid {
+						candidates[i].Status = models.StatusInvalid
+						candidates[i].Confidence = 0
+						code := 404
+						candidates[i].SMTPCode = &code
+						candidates[i].SMTPMessage = msRes.ConfirmedMethod
+					}
+				}
 			}
 		}
 	} else if cfg.NoVerify {

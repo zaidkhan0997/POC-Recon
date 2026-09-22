@@ -300,25 +300,37 @@ TCP Port 25 is the standard MTA-to-MTA port used by mail servers to deliver mess
 
 ---
 
-### Solution 1: Automatic HTTPS Cloud Fallback (Zero Port 25 / 100% Free)
-**No VPS, no SSH tunnels, and no API keys required.**
+### Solution 1: Free Multi-Signal Cloud Engine (Zero Port 25 / 100% Free / No Accounts)
+**No VPS, no SSH tunnels, and zero API keys or user accounts required.**
 
-When POC-Recon detects that Port 25 is blocked by your ISP, it automatically engages its built-in **HTTPS Cloud & Identity Verifier engine** over standard Port 443:
-1. **Microsoft 365 Cloud Directory Probe:** For domains using Microsoft 365 / Exchange Online (over 65% of enterprise businesses), queries the real-time directory to verify whether the specific mailbox exists (`IfExistsResult: 0`) or not (`IfExistsResult: 1`).
+When POC-Recon detects that Port 25 is blocked by your ISP, it automatically engages its built-in **Multi-Signal Identity & Cloud Verifier engine** over standard Port 443 (HTTP/HTTPS):
+1. **Microsoft 365 Cloud Directory Probe:** Probes Microsoft 365 GetCredentialType & Autodiscover endpoints. If the recipient exists in Microsoft 365 / Exchange Online, validates mailbox deliverability without Port 25.
 2. **Gravatar Profile Lookup:** Queries Gravatar over HTTPS to detect whether a candidate has an active avatar identity.
 3. **Public OpenPGP Keyring:** Discovers verified cryptographic public key identities published on keyservers (`keyserver.ubuntu.com`).
-4. **GitHub Public Commits Engine:** Cross-references open developer and committer metadata for technical staff.
+4. **Certificate Transparency OSINT (`crt.sh`):** Harvests historical SSL/TLS certificates to extract real organizational email naming patterns.
 
-To disable this fallback and enforce SMTP-only probing, pass `--no-cloud-fallback`.
+### Solution 2: Pure-Go AfterShip SMTP Verifier (Port 25 Direct or Proxy)
+When running on networks with open Port 25 (or through SOCKS5 proxy), POC-Recon uses the battle-tested `github.com/AfterShip/email-verifier` RFC 5321 verification engine. It handles MX resolution, SMTP handshake, Catch-All canary probing, and mail server greylisting natively in pure Go.
+
+### Solution 3: Self-Hosted Reacher Container (Optional Docker)
+If you prefer running a dedicated email verification daemon in Docker, POC-Recon integrates seamlessly with the open-source **Reacher** (`check-if-email-exists`) engine:
+```bash
+# Run Reacher backend locally
+docker run -p 8080:8080 --rm reacherhq/backend:latest
+
+# Run POC-Recon pointing to your Reacher instance
+poc-recon -d acme.com -n "Jane Doe" --reacher-url http://localhost:8080
+```
+Reacher is also fully accessible in the Desktop GUI app under **Advanced Options > Self-Hosted Reacher URL**.
 
 ---
 
-### Solution 2: DNS-over-HTTPS (DoH) MX Fallback
+### Solution 4: DNS-over-HTTPS (DoH) MX Fallback
 In restricted network environments or networks where standard UDP Port 53 DNS is intercepted or filtered, the native Go engine and desktop application automatically fall back to encrypted **DNS-over-HTTPS (DoH)** queries via **Cloudflare** (`https://cloudflare-dns.com/dns-query`) and **Google Public DNS** (`https://dns.google/resolve`).
 
 ---
 
-### Solution 3: SSH SOCKS5 Dynamic Tunnel (For Remote SMTP)
+### Solution 5: SSH SOCKS5 Dynamic Tunnel (For Remote SMTP)
 If you have access to any remote VPS where outbound Port 25 is open (e.g., Hetzner, OVH, Linode):
 
 #### Step 1: Open the SSH Dynamic SOCKS5 Tunnel
@@ -377,6 +389,7 @@ A Catch-All mail server accepts incoming emails sent to **any** address at the d
 | `--all` | `-a` | False | Display all evaluated candidate permutations in terminal summary |
 | `--concurrency` | `-c` | `4` | Number of concurrent verification workers (1–10) |
 | `--proxy` | - | None | SOCKS5 proxy URL for Port 25 routing (e.g. `socks5://127.0.0.1:1080` or env `POC_RECON_PROXY`) |
+| `--reacher-url` | - | None | Self-hosted Reacher (check-if-email-exists) HTTP API URL (e.g. `http://localhost:8080` or env `POC_RECON_REACHER_URL`) |
 | `--relay-url` | - | None | Cloud relay fallback endpoint URL (or env `POC_RECON_RELAY_URL`) |
 | `--relay-token` | - | None | Bearer token for cloud relay (or env `POC_RECON_RELAY_TOKEN`) |
 | `--no-cloud-fallback` | - | False | Disable cloud relay and provider-specific checks |
