@@ -362,3 +362,22 @@ func (a *App) OpenHTMLReport(domain string, firstName string) error {
 	}
 	return cmd.Start()
 }
+
+// OpenURL opens the specified URL in the user's default system browser
+func (a *App) OpenURL(url string) error {
+	if a.ctx != nil {
+		wailsRuntime.BrowserOpenURL(a.ctx, url)
+		return nil
+	}
+	var cmd *exec.Cmd
+	switch runtime.GOOS {
+	case "windows":
+		cmd = exec.Command("rundll32", "url.dll,FileProtocolHandler", url)
+	case "darwin":
+		cmd = exec.Command("open", url)
+	default:
+		cmd = exec.Command("xdg-open", url)
+	}
+	return cmd.Start()
+}
+

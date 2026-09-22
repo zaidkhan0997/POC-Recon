@@ -126,6 +126,22 @@ document.addEventListener("DOMContentLoaded", () => {
             showToast("Opening browser report...");
         }
     });
+
+    // Intercept clicks on external links to open directly in OS default browser
+    document.addEventListener("click", (e) => {
+        const link = e.target.closest("a[href^='http']");
+        if (link) {
+            e.preventDefault();
+            const url = link.getAttribute("href");
+            if (window.runtime && window.runtime.BrowserOpenURL) {
+                window.runtime.BrowserOpenURL(url);
+            } else if (window.go && window.go.main && window.go.main.App && window.go.main.App.OpenURL) {
+                window.go.main.App.OpenURL(url).catch(err => console.error(err));
+            } else {
+                window.open(url, "_blank");
+            }
+        }
+    });
 });
 
 function updateProgress(message, pct) {

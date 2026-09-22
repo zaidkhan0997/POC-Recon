@@ -37,6 +37,18 @@ body {
     -webkit-font-smoothing: antialiased;
 }
 
+a {
+    color: var(--accent-sky);
+    text-decoration: none;
+    cursor: pointer;
+    transition: color 0.15s ease;
+}
+
+a:hover {
+    color: #7dd3fc;
+    text-decoration: underline;
+}
+
 
 .app-shell {
     max-width: 1100px;
