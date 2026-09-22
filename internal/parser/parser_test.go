@@ -36,7 +36,7 @@ func TestParsePersonName(t *testing.T) {
 		last      string
 		rawTokens string
 	}{
-		{"Zaid Khan", "Zaid", "Khan", "Zaid Khan"},
+		{"Alex Morgan", "Alex", "Morgan", "Alex Morgan"},
 		{"Dr. Jane M. Doe PhD", "Jane", "Doe", "Dr. Jane M. Doe PhD"},
 		{"Satya Nadella", "Satya", "Nadella", "Satya Nadella"},
 		{"Alice", "Alice", "", "Alice"},
@@ -60,7 +60,7 @@ func TestExtractNameFromLinkedInSlug(t *testing.T) {
 		first string
 		last  string
 	}{
-		{"https://www.linkedin.com/in/zaid-khan-123456", "Zaid", "Khan"},
+		{"https://www.linkedin.com/in/alex-morgan-123456", "Alex", "Morgan"},
 		{"jane-doe", "Jane", "Doe"},
 		{"https://linkedin.com/in/satyanadella", "Satyanadella", ""},
 	}

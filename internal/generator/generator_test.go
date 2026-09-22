@@ -8,12 +8,12 @@ import (
 
 func TestGenerateEmailPatterns(t *testing.T) {
 	person := models.NameParts{
-		FirstName: "Zaid",
-		LastName:  "Khan",
-		FullName:  "Zaid Khan",
+		FirstName: "John",
+		LastName:  "Doe",
+		FullName:  "John Doe",
 	}
 
-	cands := GenerateEmailPatterns("company.com", person, "")
+	cands := GenerateEmailPatterns("example.com", person, "")
 	if len(cands) == 0 {
 		t.Fatalf("expected candidates, got 0")
 	}
@@ -21,31 +21,31 @@ func TestGenerateEmailPatterns(t *testing.T) {
 	foundFirst := false
 	foundFirstLast := false
 	for _, c := range cands {
-		if c.Email == "zaid@company.com" && c.PatternName == "first" {
+		if c.Email == "john@example.com" && c.PatternName == "first" {
 			foundFirst = true
 		}
-		if c.Email == "zaid.khan@company.com" && c.PatternName == "first.last" {
+		if c.Email == "john.doe@example.com" && c.PatternName == "first.last" {
 			foundFirstLast = true
 		}
 	}
 
 	if !foundFirst {
-		t.Errorf("expected zaid@company.com in candidates")
+		t.Errorf("expected john@example.com in candidates")
 	}
 	if !foundFirstLast {
-		t.Errorf("expected zaid.khan@company.com in candidates")
+		t.Errorf("expected john.doe@example.com in candidates")
 	}
 }
 
 func TestPreferredPatternElevation(t *testing.T) {
 	person := models.NameParts{
-		FirstName: "Zaid",
-		LastName:  "Khan",
-		FullName:  "Zaid Khan",
+		FirstName: "John",
+		LastName:  "Doe",
+		FullName:  "John Doe",
 	}
 
 	// Elevate "first" pattern
-	cands := GenerateEmailPatterns("company.com", person, "first")
+	cands := GenerateEmailPatterns("example.com", person, "first")
 	if len(cands) == 0 {
 		t.Fatalf("expected candidates")
 	}
@@ -53,26 +53,26 @@ func TestPreferredPatternElevation(t *testing.T) {
 	if cands[0].PatternName != "first" {
 		t.Errorf("expected first candidate to be 'first' pattern, got %s", cands[0].PatternName)
 	}
-	if cands[0].Email != "zaid@company.com" {
-		t.Errorf("expected first candidate to be zaid@company.com, got %s", cands[0].Email)
+	if cands[0].Email != "john@example.com" {
+		t.Errorf("expected first candidate to be john@example.com, got %s", cands[0].Email)
 	}
 }
 
 func TestNewHyphenAndReversedPatterns(t *testing.T) {
 	person := models.NameParts{
-		FirstName:  "Mohd",
-		MiddleName: "Zaid",
-		LastName:   "Khan",
-		FullName:   "Mohd Zaid Khan",
+		FirstName:  "Alex",
+		MiddleName: "James",
+		LastName:   "Taylor",
+		FullName:   "Alex James Taylor",
 	}
 
-	cands := GenerateEmailPatterns("oneirohire.com", person, "")
+	cands := GenerateEmailPatterns("example.com", person, "")
 	expectedMap := map[string]string{
-		"first-last":   "mohd-khan@oneirohire.com",
-		"lastfirst":    "khanmohd@oneirohire.com",
-		"last_first":   "khan_mohd@oneirohire.com",
-		"last-first":   "khan-mohd@oneirohire.com",
-		"first-m-last": "mohd-z-khan@oneirohire.com",
+		"first-last":   "alex-taylor@example.com",
+		"lastfirst":    "tayloralex@example.com",
+		"last_first":   "taylor_alex@example.com",
+		"last-first":   "taylor-alex@example.com",
+		"first-m-last": "alex-j-taylor@example.com",
 	}
 
 	foundMap := make(map[string]bool)

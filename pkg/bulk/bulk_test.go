@@ -55,7 +55,7 @@ Bob,Builder,builder.co
 
 func TestParseCSVWithPattern(t *testing.T) {
 	csvData := `First Name,Last Name,Company Domain,Pattern
-Mohd,Zaid,oneirohire.com,first
+Alex,Taylor,example.com,first
 Satya,Nadella,microsoft.com,first.last
 `
 	targets, err := ParseCSV(strings.NewReader(csvData))
@@ -67,7 +67,7 @@ Satya,Nadella,microsoft.com,first.last
 		t.Fatalf("expected 2 targets, got %d", len(targets))
 	}
 
-	if targets[0].Pattern != "first" || targets[0].Domain != "oneirohire.com" {
+	if targets[0].Pattern != "first" || targets[0].Domain != "example.com" {
 		t.Errorf("expected target 0 pattern 'first', got: %+v", targets[0])
 	}
 	if targets[1].Pattern != "first.last" {

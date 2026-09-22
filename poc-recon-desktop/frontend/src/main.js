@@ -415,25 +415,25 @@ function renderBuilderTable() {
         tr.innerHTML = `
             <td class="builder-row-num">${idx + 1}</td>
             <td>
-                <input type="text" class="builder-input row-first" placeholder="e.g. Mohd" value="${escapeHtml(row.firstName)}" data-id="${row.id}">
+                <input type="text" class="builder-input row-first" placeholder="e.g. Jane" value="${escapeHtml(row.firstName)}" data-id="${row.id}">
             </td>
             <td>
-                <input type="text" class="builder-input row-last" placeholder="e.g. Zaid" value="${escapeHtml(row.lastName)}" data-id="${row.id}">
+                <input type="text" class="builder-input row-last" placeholder="e.g. Doe" value="${escapeHtml(row.lastName)}" data-id="${row.id}">
             </td>
             <td>
-                <input type="text" class="builder-input row-domain" placeholder="e.g. oneirohire.com" value="${escapeHtml(row.domain)}" data-id="${row.id}">
+                <input type="text" class="builder-input row-domain" placeholder="e.g. acme.com" value="${escapeHtml(row.domain)}" data-id="${row.id}">
             </td>
             <td>
                 <select class="builder-input row-pattern" data-id="${row.id}" style="padding: 5px 8px; font-size: 0.82rem; background: var(--bg-card); color: var(--text-main); border: 1px solid var(--border-color); border-radius: 6px; width: 100%;">
                     <option value="" ${p === "" ? "selected" : ""}>Auto-Detect</option>
-                    <option value="first" ${p === "first" ? "selected" : ""}>first (e.g. zaid@...)</option>
-                    <option value="first.last" ${p === "first.last" ? "selected" : ""}>first.last (e.g. mohd.zaid@...)</option>
-                    <option value="flast" ${p === "flast" ? "selected" : ""}>flast (e.g. mzaid@...)</option>
-                    <option value="firstlast" ${p === "firstlast" ? "selected" : ""}>firstlast (e.g. mohdzaid@...)</option>
-                    <option value="first_last" ${p === "first_last" ? "selected" : ""}>first_last (e.g. mohd_zaid@...)</option>
-                    <option value="last" ${p === "last" ? "selected" : ""}>last (e.g. zaid@...)</option>
-                    <option value="last.first" ${p === "last.first" ? "selected" : ""}>last.first (e.g. zaid.mohd@...)</option>
-                    <option value="f.last" ${p === "f.last" ? "selected" : ""}>f.last (e.g. m.zaid@...)</option>
+                    <option value="first" ${p === "first" ? "selected" : ""}>first (e.g. john@...)</option>
+                    <option value="first.last" ${p === "first.last" ? "selected" : ""}>first.last (e.g. john.doe@...)</option>
+                    <option value="flast" ${p === "flast" ? "selected" : ""}>flast (e.g. jdoe@...)</option>
+                    <option value="firstlast" ${p === "firstlast" ? "selected" : ""}>firstlast (e.g. johndoe@...)</option>
+                    <option value="first_last" ${p === "first_last" ? "selected" : ""}>first_last (e.g. john_doe@...)</option>
+                    <option value="last" ${p === "last" ? "selected" : ""}>last (e.g. doe@...)</option>
+                    <option value="last.first" ${p === "last.first" ? "selected" : ""}>last.first (e.g. doe.john@...)</option>
+                    <option value="f.last" ${p === "f.last" ? "selected" : ""}>f.last (e.g. j.doe@...)</option>
                 </select>
             </td>
             <td>
