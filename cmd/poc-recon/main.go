@@ -151,7 +151,7 @@ func main() {
 	// 4. Verification Engine
 	if !cfg.NoVerify && cfg.ReacherURL != "" {
 		fmt.Printf("🐳 Engaging self-hosted Reacher verification engine at %s...\n", cfg.ReacherURL)
-		verificationMethod = "Self-Hosted Reacher (Docker HTTP)"
+		verificationMethod = "Verified via self-hosted Reacher (SMTP)"
 		reacherClient := cloud.NewReacherClient(cfg.ReacherURL, cfg.Proxy, cfg.SMTPTimeout)
 
 		ctx, cancel := context.WithCancel(context.Background())

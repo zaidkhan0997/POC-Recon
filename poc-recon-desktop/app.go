@@ -171,7 +171,7 @@ func (a *App) RunRecon(req ReconRequest) (*models.ReconResult, error) {
 		}
 	} else if req.ReacherURL != "" {
 		a.emitProgress("reacher", fmt.Sprintf("Connecting to self-hosted Reacher engine at %s...", req.ReacherURL), 60)
-		result.VerificationMethod = "Self-Hosted Reacher (Docker HTTP)"
+		result.VerificationMethod = "Verified via self-hosted Reacher (SMTP)"
 
 		for i := range result.Candidates {
 			pct := 60 + int(float64(i+1)/float64(total)*35)
