@@ -3,6 +3,7 @@ package cloud
 import (
 	"context"
 	"fmt"
+	"io"
 	"net/http"
 	"strings"
 	"time"
@@ -42,14 +43,14 @@ func CheckM365Autodiscover(ctx context.Context, email string, timeout time.Durat
 	}
 	defer resp.Body.Close()
 
-	// 200 OK or 302 redirect with user settings indicates active account
-	if resp.StatusCode == 200 || resp.StatusCode == 302 {
-		loc := resp.Header.Get("Location")
-		if loc != "" && !strings.Contains(loc, "error") {
-			return true
-		}
-		if resp.StatusCode == 200 {
-			return true
+	// Only HTTP 200 containing confirmed active Autodiscover endpoint on outlook.office365.com
+	if resp.StatusCode == 200 {
+		body, err := io.ReadAll(io.LimitReader(resp.Body, 2048))
+		if err == nil {
+			bodyStr := string(body)
+			if strings.Contains(bodyStr, "Autodiscoverv1") && strings.Contains(bodyStr, "outlook.office365.com") {
+				return true
+			}
 		}
 	}
 	return false
