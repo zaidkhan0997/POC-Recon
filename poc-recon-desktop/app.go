@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/csv"
 	"fmt"
 	"os"
 	"os/exec"
@@ -11,6 +12,8 @@ import (
 	"time"
 
 	wailsRuntime "github.com/wailsapp/wails/v2/pkg/runtime"
+	"github.com/zaidkhan0997/POC-Recon/pkg/bulk"
+	"github.com/zaidkhan0997/POC-Recon/pkg/cache"
 	"github.com/zaidkhan0997/POC-Recon/pkg/export"
 	"github.com/zaidkhan0997/POC-Recon/pkg/generator"
 	"github.com/zaidkhan0997/POC-Recon/pkg/models"
@@ -323,6 +326,20 @@ func (a *App) RunRecon(req ReconRequest) (*models.ReconResult, error) {
 	base := fmt.Sprintf("results/%s_%s", domain, strings.ToLower(person.FirstName))
 	_ = export.ExportHTML(result, base+"_report.html")
 
+	// Save confirmed pattern and lead to local persistent cache
+	c := cache.GetDefaultCache()
+	provStr := "Standard"
+	if provider != nil && provider.Name != "" {
+		provStr = provider.Name
+	}
+	if result.BestCandidate != nil && result.BestCandidate.PatternName != "" {
+		c.SetDomainPattern(domain, result.BestCandidate.PatternName, provStr, isCatchAll)
+	}
+	savedLead := cache.ConvertReconResultToSavedLead(result)
+	if savedLead != nil {
+		c.SaveLead(*savedLead)
+	}
+
 	a.emitProgress("done", "Reconnaissance complete!", 100)
 	return result, nil
 }
@@ -335,6 +352,99 @@ func (a *App) emitProgress(step string, msg string, pct int) {
 			Percentage: pct,
 		})
 	}
+}
+
+// ParseCSVContent parses raw CSV string into a slice of LeadTarget records
+func (a *App) ParseCSVContent(csvContent string) ([]bulk.LeadTarget, error) {
+	return bulk.ParseCSV(strings.NewReader(csvContent))
+}
+
+// RunBulkRecon processes a slice of LeadTargets in parallel and emits bulk-progress events
+func (a *App) RunBulkRecon(targets []bulk.LeadTarget, proxyURL string, noVerify bool) ([]bulk.EnrichedLeadExport, error) {
+	c := cache.GetDefaultCache()
+	results, err := bulk.ProcessBatch(context.Background(), targets, 6, proxyURL, noVerify, c, func(p bulk.BatchProgress) {
+		if a.ctx != nil {
+			wailsRuntime.EventsEmit(a.ctx, "bulk-progress", p)
+		}
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	_ = os.MkdirAll("results", 0755)
+	_ = bulk.ExportBatchToCSVFile(results, "results/bulk_verified_leads.csv")
+
+	// Convert to export representation
+	nowStr := time.Now().Format("2006-01-02 15:04:05")
+	var exports []bulk.EnrichedLeadExport
+	for _, res := range results {
+		if res == nil {
+			continue
+		}
+		bestEmail := ""
+		confidence := 0
+		status := "UNVERIFIED"
+		pattern := "unknown"
+		if res.BestCandidate != nil {
+			bestEmail = res.BestCandidate.Email
+			confidence = res.BestCandidate.Confidence
+			status = string(res.BestCandidate.Status)
+			pattern = res.BestCandidate.PatternName
+		}
+		provider := "Unknown"
+		if res.Provider != nil && res.Provider.Name != "" {
+			provider = res.Provider.Name
+		}
+		exports = append(exports, bulk.EnrichedLeadExport{
+			FullName:     res.Person.FullName,
+			FirstName:    res.Person.FirstName,
+			LastName:     res.Person.LastName,
+			Domain:       res.TargetDomain,
+			Email:        bestEmail,
+			Confidence:   confidence,
+			Status:       status,
+			Pattern:      pattern,
+			MailProvider: provider,
+			VerifiedAt:   nowStr,
+		})
+	}
+	return exports, nil
+}
+
+// GetSavedLeads returns all leads from local cache
+func (a *App) GetSavedLeads() []cache.SavedLead {
+	return cache.GetDefaultCache().GetLeads()
+}
+
+// ClearSavedLeads deletes all saved leads from local cache
+func (a *App) ClearSavedLeads() error {
+	cache.GetDefaultCache().ClearLeads()
+	return nil
+}
+
+// ExportSavedLeadsCSV exports all saved leads in cache to results/saved_leads_export.csv
+func (a *App) ExportSavedLeadsCSV() (string, error) {
+	leads := cache.GetDefaultCache().GetLeads()
+	_ = os.MkdirAll("results", 0755)
+	filePath := "results/saved_leads_export.csv"
+	file, err := os.Create(filePath)
+	if err != nil {
+		return "", err
+	}
+	defer file.Close()
+
+	writer := csv.NewWriter(file)
+	defer writer.Flush()
+
+	_ = writer.Write([]string{
+		"Full Name", "First Name", "Last Name", "Domain", "Email", "Confidence", "Status", "Pattern", "Provider", "Date Verified",
+	})
+	for _, l := range leads {
+		_ = writer.Write([]string{
+			l.FullName, l.FirstName, l.LastName, l.Domain, l.Email, fmt.Sprintf("%d", l.Confidence), l.Status, l.PatternName, l.Provider, l.VerifiedAt.Format("2006-01-02 15:04:05"),
+		})
+	}
+	return filePath, nil
 }
 
 // OpenResultsFolder opens the local results directory in OS file manager

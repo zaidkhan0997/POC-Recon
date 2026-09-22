@@ -9,6 +9,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/zaidkhan0997/POC-Recon/pkg/bulk"
+	"github.com/zaidkhan0997/POC-Recon/pkg/cache"
 	"github.com/zaidkhan0997/POC-Recon/internal/cloud"
 	"github.com/zaidkhan0997/POC-Recon/internal/config"
 	"github.com/zaidkhan0997/POC-Recon/internal/dns"
@@ -29,6 +31,11 @@ func main() {
 	}
 
 	output.PrintBanner()
+
+	if cfg.BulkPath != "" {
+		runBulkMode(cfg)
+		return
+	}
 
 	// 1. Domain & Person Parsing
 	domain, err := parser.NormalizeDomain(cfg.Website)
@@ -307,4 +314,102 @@ func main() {
 			}
 		}
 	}
+}
+
+func runBulkMode(cfg *config.Config) {
+	fmt.Printf("📂 Loading bulk leads from: %s\n", cfg.BulkPath)
+	file, err := os.Open(cfg.BulkPath)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error opening bulk CSV file: %v\n", err)
+		os.Exit(1)
+	}
+	defer file.Close()
+
+	targets, err := bulk.ParseCSV(file)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error parsing bulk CSV: %v\n", err)
+		os.Exit(1)
+	}
+
+	fmt.Printf("🎯 Successfully loaded %d lead targets.\n", len(targets))
+	fmt.Printf("⚡ Starting concurrent batch discovery (%d workers)...\n\n", cfg.Concurrency)
+
+	c := cache.GetDefaultCache()
+	ctx := context.Background()
+
+	startTime := time.Now()
+	results, err := bulk.ProcessBatch(ctx, targets, cfg.Concurrency, cfg.Proxy, cfg.NoVerify, c, func(p bulk.BatchProgress) {
+		leadName := p.CurrentLead.FullName
+		if len(leadName) > 20 {
+			leadName = leadName[:17] + "..."
+		}
+		leadDomain := p.CurrentLead.Domain
+		if len(leadDomain) > 20 {
+			leadDomain = leadDomain[:17] + "..."
+		}
+
+		bestEmail := "evaluating..."
+		status := "..."
+		if p.Result != nil && p.Result.BestCandidate != nil {
+			bestEmail = p.Result.BestCandidate.Email
+			status = string(p.Result.BestCandidate.Status)
+		}
+
+		fmt.Printf("\r\033[K[%3d%%] Target %d/%d: %s (%s) -> %s [%s] (Confirmed Valid: %d)",
+			p.Percentage, p.Index, p.Total, leadName, leadDomain, bestEmail, status, p.ValidCount)
+	})
+
+	fmt.Println() // Newline after progress
+	duration := time.Since(startTime).Round(time.Millisecond)
+
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Batch processing failed: %v\n", err)
+		os.Exit(1)
+	}
+
+	// Calculate statistics
+	validCount := 0
+	catchAllCount := 0
+	otherCount := 0
+
+	for _, r := range results {
+		if r != nil && r.BestCandidate != nil {
+			switch r.BestCandidate.Status {
+			case models.StatusValid:
+				validCount++
+			case models.StatusCatchAll:
+				catchAllCount++
+			default:
+				otherCount++
+			}
+		}
+	}
+
+	outPath := cfg.OutputFile
+	if outPath == "" {
+		outPath = "results/bulk_verified_leads.csv"
+	}
+	_ = os.MkdirAll(filepath.Dir(outPath), 0755)
+
+	var exportErr error
+	if strings.HasSuffix(strings.ToLower(outPath), ".json") {
+		exportErr = bulk.ExportBatchToJSONFile(results, outPath)
+	} else {
+		exportErr = bulk.ExportBatchToCSVFile(results, outPath)
+	}
+
+	fmt.Println("\n" + strings.Repeat("=", 64))
+	fmt.Println("✨ BATCH RECONNAISSANCE SUMMARY")
+	fmt.Println(strings.Repeat("=", 64))
+	fmt.Printf("Total Targets Processed: %d\n", len(targets))
+	fmt.Printf("🎯 100%% Confirmed Valid: %d (%.1f%%)\n", validCount, float64(validCount)/float64(len(targets))*100)
+	fmt.Printf("⚠️  Catch-All / Filtered: %d\n", catchAllCount)
+	fmt.Printf("ℹ️  Heuristic Confirmed:  %d\n", otherCount)
+	fmt.Printf("⏱️  Execution Time:        %s\n", duration)
+	if exportErr != nil {
+		fmt.Printf("❌ Failed to save output file: %v\n", exportErr)
+	} else {
+		fmt.Printf("📄 Enriched CRM Export:   %s\n", outPath)
+	}
+	fmt.Println(strings.Repeat("=", 64))
 }

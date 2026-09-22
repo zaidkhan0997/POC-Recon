@@ -29,6 +29,7 @@ type Config struct {
 	Format          string
 	OpenReport      bool
 	Concurrency     int
+	BulkPath        string
 }
 
 func ParseFlags() (*Config, error) {
@@ -54,7 +55,11 @@ func ParseFlags() (*Config, error) {
 		format          string
 		openReport      bool
 		concurrency     int
+		bulkPath        string
 	)
+
+	flag.StringVar(&bulkPath, "b", "", "Path to CSV file for bulk batch lead reconnaissance")
+	flag.StringVar(&bulkPath, "bulk", "", "Path to CSV file for bulk batch lead reconnaissance")
 
 	flag.StringVar(&website, "w", "", "Target company website/domain (e.g. acme.com)")
 	flag.StringVar(&website, "website", "", "Target company website/domain")
@@ -154,6 +159,16 @@ func ParseFlags() (*Config, error) {
 		}
 	} else if cfg.Format == "" {
 		cfg.Format = "txt"
+	}
+
+	cfg.BulkPath = strings.TrimSpace(bulkPath)
+
+	// If bulk mode is active, skip single target interactive prompts
+	if cfg.BulkPath != "" {
+		if cfg.OutputFile == "" {
+			cfg.OutputFile = "results/bulk_verified_leads.csv"
+		}
+		return cfg, nil
 	}
 
 	// Interactive prompt if required arguments are missing
