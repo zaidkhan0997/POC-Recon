@@ -6,7 +6,6 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
-	"math/rand/v2"
 	"net"
 	"net/url"
 	"os"
@@ -186,7 +185,7 @@ func CheckCatchAll(
 		fmt.Sprintf("nonexistent-user-%s@%s", randomSuffix(), domain),
 		fmt.Sprintf("invalid-%s@%s", randomSuffix(), domain),
 		fmt.Sprintf("fake%d@%s", time.Now().UnixNano()%100000, domain),
-		fmt.Sprintf("test%d%d%d@%s", time.Now().Unix(), os.Getpid(), rand.IntN(10000), domain),
+		fmt.Sprintf("test%d%d%s@%s", time.Now().Unix(), os.Getpid(), randomSuffix(), domain),
 	}
 
 	acceptCount := 0

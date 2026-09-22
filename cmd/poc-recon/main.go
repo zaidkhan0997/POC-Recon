@@ -139,7 +139,7 @@ func main() {
 	// This saves time if Port 25 is blocked - we can skip SMTP entirely
 	if !cfg.NoVerify && len(mxRecords) > 0 {
 		primaryMX := mxRecords[0].Host
-		fmt.Printf("🔌 Pre-flight: Testing Port 25 connectivity to %s...\\n", primaryMX)
+		fmt.Printf("🔌 Pre-flight: Testing Port 25 connectivity to %s...\n", primaryMX)
 		testVerifier := smtp.NewVerifier(cfg.Proxy, cfg.SMTPTimeout, cfg.Delay)
 		port25Open = testVerifier.CheckPort25(primaryMX)
 
@@ -239,7 +239,7 @@ func main() {
 			if len(validIndices) > 0 {
 				bestIdx := selectBestCandidate(candidates, validIndices, activePattern)
 				candidates[bestIdx].Confidence = 100
-				fmt.Printf("🎯 Best validated mailbox: %s (Pattern: %s)\\n", candidates[bestIdx].Email, candidates[bestIdx].PatternName)
+				fmt.Printf("🎯 Best validated mailbox: %s (Pattern: %s)\n", candidates[bestIdx].Email, candidates[bestIdx].PatternName)
 			}
 
 		} else {
@@ -318,7 +318,7 @@ func main() {
 				if len(validIndices) > 0 {
 					bestIdx := selectBestCandidate(candidates, validIndices, activePattern)
 					candidates[bestIdx].Confidence = 100
-					fmt.Printf("🎯 Best validated mailbox: %s (Pattern: %s)\\n", candidates[bestIdx].Email, candidates[bestIdx].PatternName)
+					fmt.Printf("🎯 Best validated mailbox: %s (Pattern: %s)\n", candidates[bestIdx].Email, candidates[bestIdx].PatternName)
 				}
 			}
 		}
