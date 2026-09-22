@@ -315,13 +315,18 @@ When running on networks with open Port 25 (or through SOCKS5 proxy), POC-Recon 
 ### Solution 3: Self-Hosted Reacher Container (Optional Docker)
 If you prefer running a dedicated email verification daemon in Docker, POC-Recon integrates seamlessly with the open-source **Reacher** (`check-if-email-exists`) engine:
 ```bash
-# Run Reacher backend locally
-docker run -p 8080:8080 --rm reacherhq/backend:latest
+# Start Reacher
+docker run -p 8080:8080 reacherhq/backend:latest
 
-# Run POC-Recon pointing to your Reacher instance
-poc-recon -d acme.com -n "Jane Doe" --reacher-url http://localhost:8080
+# CLI
+./poc-recon --website company.com --name "Jane Doe" --reacher-url http://localhost:8080
 ```
-Reacher is also fully accessible in the Desktop GUI app under **Advanced Options > Self-Hosted Reacher URL**.
+> [!NOTE]
+> **Desktop GUI & Environment Variable Support:**
+> The Desktop GUI also supports the same Reacher URL (via the **Self-Hosted Reacher URL** input under Advanced Options or the `POC_RECON_REACHER_URL` environment variable).
+> 
+> **License & Architecture:**
+> Reacher is licensed under **AGPL-3.0**. POC-Recon generates the corporate candidate permutations locally, passing each candidate sequentially to Reacher for deliverability confirmation with early-exit on the first valid address.
 
 ---
 

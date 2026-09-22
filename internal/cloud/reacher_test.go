@@ -66,3 +66,31 @@ func TestReacherClientCheckInvalid(t *testing.T) {
 		t.Errorf("expected StatusInvalid, got %v", status)
 	}
 }
+
+func TestReacherClientCheckCatchAll(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var req reacherRequest
+		_ = json.NewDecoder(r.Body).Decode(&req)
+		resp := reacherResponse{
+			Input:       req.ToEmail,
+			IsReachable: "unknown",
+		}
+		resp.SMTP.IsCatchAll = true
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(resp)
+	}))
+	defer server.Close()
+
+	client := NewReacherClient(server.URL, "", 2*time.Second)
+	status, code, _, err := client.CheckEmail(context.Background(), "canary@catchall.com")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if status != models.StatusCatchAll {
+		t.Errorf("expected StatusCatchAll, got %v", status)
+	}
+	if code == nil || *code != 250 {
+		t.Errorf("expected code 250 for catch-all probe, got %v", code)
+	}
+}
+

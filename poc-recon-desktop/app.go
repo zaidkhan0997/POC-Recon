@@ -157,6 +157,11 @@ func (a *App) RunRecon(req ReconRequest) (*models.ReconResult, error) {
 
 	total := len(result.Candidates)
 
+	reacherURL := strings.TrimSpace(req.ReacherURL)
+	if reacherURL == "" {
+		reacherURL = strings.TrimSpace(os.Getenv("POC_RECON_REACHER_URL"))
+	}
+
 	if !hasMX {
 		for i := range result.Candidates {
 			result.Candidates[i].Status = models.StatusNoMX
@@ -169,15 +174,15 @@ func (a *App) RunRecon(req ReconRequest) (*models.ReconResult, error) {
 			result.Candidates[i].SMTPMessage = "Verification skipped (Offline Mode)"
 			result.Candidates[i].Confidence = scorer.ComputeConfidence(models.StatusUnverified, result.Candidates[i].PatternName, provider, isCatchAll, port25Open, activePattern, detectedPattern)
 		}
-	} else if req.ReacherURL != "" {
-		a.emitProgress("reacher", fmt.Sprintf("Connecting to self-hosted Reacher engine at %s...", req.ReacherURL), 60)
+	} else if reacherURL != "" {
+		a.emitProgress("reacher", fmt.Sprintf("Connecting to self-hosted Reacher engine at %s...", reacherURL), 60)
 		result.VerificationMethod = "Verified via self-hosted Reacher (SMTP)"
 
 		for i := range result.Candidates {
 			pct := 60 + int(float64(i+1)/float64(total)*35)
 			a.emitProgress("reacher-eval", fmt.Sprintf("Reacher testing %d/%d: %s", i+1, total, result.Candidates[i].Email), pct)
 
-			st, code, msg, err := verifier.VerifyReacher(context.Background(), result.Candidates[i].Email, req.ReacherURL, req.ProxyURL, 8*time.Second)
+			st, code, msg, err := verifier.VerifyReacher(context.Background(), result.Candidates[i].Email, reacherURL, req.ProxyURL, 8*time.Second)
 			if err == nil {
 				result.Candidates[i].Status = st
 				result.Candidates[i].SMTPCode = code
