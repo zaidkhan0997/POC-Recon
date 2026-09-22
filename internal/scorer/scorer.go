@@ -40,54 +40,62 @@ func ComputeConfidence(
 		return 0
 	}
 
-	activePattern := strings.ToLower(strings.TrimSpace(preferredPattern))
+	prefPat := strings.ToLower(strings.TrimSpace(preferredPattern))
+	detPat := strings.ToLower(strings.TrimSpace(detectedPattern))
+	activePattern := prefPat
 	if activePattern == "" {
-		activePattern = strings.ToLower(strings.TrimSpace(detectedPattern))
+		activePattern = detPat
 	}
 
 	patLower := strings.ToLower(strings.TrimSpace(pattern))
-	baseWeight, ok := defaultWeights[patLower]
-	if !ok {
-		baseWeight = 15
-	}
 
-	score := baseWeight
-	if activePattern != "" {
-		if patLower == activePattern {
-			score = 90
+	// For unverified or port-blocked candidates: honest realistic ratings
+	if status != models.StatusValid {
+		score := 30
+		if activePattern != "" {
+			if patLower == activePattern {
+				if detPat != "" {
+					score = 70 // OSINT evidence confirms corporate convention
+				} else {
+					score = 65 // User-specified pattern preference
+				}
+			} else {
+				score = 40
+			}
 		} else {
-			if score > 60 {
-				score = 60
+			// No pattern confirmed: balanced heuristic range (32% - 50%)
+			unverifiedWeights := map[string]int{
+				"first.last": 50,
+				"first":      48,
+				"flast":      46,
+				"firstlast":  44,
+				"last":       42,
+				"first_last": 40,
+				"last.first": 38,
+				"f.last":     36,
+				"first.l":    34,
+				"lfirst":     32,
+				"f_last":     30,
+			}
+			if w, ok := unverifiedWeights[patLower]; ok {
+				score = w
 			}
 		}
-	}
 
-	// Provider heuristics only elevate confirmed active pattern
-	if provider != nil && activePattern != "" {
-		pName := strings.ToLower(provider.Name)
-		if strings.Contains(pName, "google") || strings.Contains(pName, "workspace") || strings.Contains(pName, "microsoft") || strings.Contains(pName, "exchange") || strings.Contains(pName, "office") {
-			if patLower == activePattern {
-				score += 5
-			}
+		if isCatchAll {
+			score = int(float64(score) * 0.75)
 		}
-		if strings.Contains(provider.SPFRecord, "-all") {
-			if patLower == activePattern {
-				score += 5
-			}
+		if score > 70 {
+			score = 70
 		}
+		if score < 5 {
+			score = 5
+		}
+		return score
 	}
 
-	if isCatchAll {
-		score = int(float64(score) * 0.75)
-	}
-
-	if score > 95 {
-		score = 95
-	}
-	if score < 5 {
-		score = 5
-	}
-	return score
+	// For verified candidates (StatusValid)
+	return 100
 }
 
 func ScoreCandidates(

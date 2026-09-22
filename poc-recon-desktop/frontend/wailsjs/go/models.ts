@@ -39,6 +39,7 @@ export namespace bulk {
 	    full_name: string;
 	    first_name?: string;
 	    last_name?: string;
+	    pattern?: string;
 	    person_linkedin?: string;
 	    company_linkedin?: string;
 	
@@ -52,6 +53,7 @@ export namespace bulk {
 	        this.full_name = source["full_name"];
 	        this.first_name = source["first_name"];
 	        this.last_name = source["last_name"];
+	        this.pattern = source["pattern"];
 	        this.person_linkedin = source["person_linkedin"];
 	        this.company_linkedin = source["company_linkedin"];
 	    }

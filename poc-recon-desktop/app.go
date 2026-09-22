@@ -19,6 +19,7 @@ import (
 	"github.com/zaidkhan0997/POC-Recon/pkg/models"
 	"github.com/zaidkhan0997/POC-Recon/pkg/osint"
 	"github.com/zaidkhan0997/POC-Recon/pkg/parser"
+	"github.com/zaidkhan0997/POC-Recon/pkg/scorer"
 	"github.com/zaidkhan0997/POC-Recon/pkg/verifier"
 )
 
@@ -53,63 +54,6 @@ type ProgressUpdate struct {
 	Step       string `json:"step"`
 	Message    string `json:"message"`
 	Percentage int    `json:"percentage"`
-}
-
-func computeConfidence(status models.VerificationStatus, pattern string, provider *models.ProviderInfo, isCatchAll bool, port25Open bool, preferredPattern string) int {
-	if status == models.StatusValid {
-		return 100
-	}
-	if status == models.StatusInvalid || status == models.StatusNoMX {
-		return 0
-	}
-	// Fairly balanced weights across major corporate naming conventions
-	weights := map[string]int{
-		"first.last": 75,
-		"first":      70,
-		"flast":      65,
-		"firstlast":  60,
-		"first_last": 55,
-		"last.first": 50,
-		"f.last":     50,
-		"last":       40,
-		"lfirst":     35,
-		"first.l":    35,
-		"f_last":     30,
-	}
-	score, ok := weights[pattern]
-	if !ok {
-		score = 25
-	}
-	if preferredPattern != "" {
-		if strings.EqualFold(pattern, preferredPattern) {
-			score = 90
-		} else if score > 60 {
-			score = 60
-		}
-	}
-	if provider != nil && preferredPattern != "" {
-		pLower := strings.ToLower(provider.Name)
-		if strings.Contains(pLower, "google") || strings.Contains(pLower, "workspace") || strings.Contains(pLower, "microsoft") {
-			if strings.EqualFold(pattern, preferredPattern) {
-				score += 5
-			}
-		}
-		if strings.Contains(provider.SPFRecord, "-all") {
-			if strings.EqualFold(pattern, preferredPattern) {
-				score += 5
-			}
-		}
-	}
-	if isCatchAll {
-		score = int(float64(score) * 0.75)
-	}
-	if score > 95 {
-		score = 95
-	}
-	if score < 5 {
-		score = 5
-	}
-	return score
 }
 
 // RunRecon executes the email intelligence workflow and streams progress events
@@ -222,7 +166,7 @@ func (a *App) RunRecon(req ReconRequest) (*models.ReconResult, error) {
 		for i := range result.Candidates {
 			result.Candidates[i].Status = models.StatusUnverified
 			result.Candidates[i].SMTPMessage = "Verification skipped (Offline Mode)"
-			result.Candidates[i].Confidence = computeConfidence(models.StatusUnverified, result.Candidates[i].PatternName, provider, isCatchAll, port25Open, activePattern)
+			result.Candidates[i].Confidence = scorer.ComputeConfidence(models.StatusUnverified, result.Candidates[i].PatternName, provider, isCatchAll, port25Open, activePattern, detectedPattern)
 		}
 	} else if !port25Open {
 		a.emitProgress("cloud", "Port 25 blocked by network. Engaging HTTPS Cloud & Identity Verifiers...", 60)
@@ -282,7 +226,7 @@ func (a *App) RunRecon(req ReconRequest) (*models.ReconResult, error) {
 			if !resolved {
 				result.Candidates[i].Status = models.StatusPortBlocked
 				result.Candidates[i].SMTPMessage = "Port 25 filtered by ISP; heuristic candidate evaluated"
-				result.Candidates[i].Confidence = computeConfidence(models.StatusPortBlocked, pattern, provider, isCatchAll, false, activePattern)
+				result.Candidates[i].Confidence = scorer.ComputeConfidence(models.StatusPortBlocked, pattern, provider, isCatchAll, false, activePattern, detectedPattern)
 			}
 
 			if result.Candidates[i].Status == models.StatusValid {
@@ -322,7 +266,7 @@ func (a *App) RunRecon(req ReconRequest) (*models.ReconResult, error) {
 			if !resolved {
 				result.Candidates[i].Status = models.StatusCatchAll
 				result.Candidates[i].SMTPMessage = "Mail server accepts all probes (Catch-All)"
-				result.Candidates[i].Confidence = computeConfidence(models.StatusCatchAll, pattern, provider, isCatchAll, true, activePattern)
+				result.Candidates[i].Confidence = scorer.ComputeConfidence(models.StatusCatchAll, pattern, provider, isCatchAll, true, activePattern, detectedPattern)
 			}
 
 			if result.Candidates[i].Status == models.StatusValid {
@@ -340,7 +284,7 @@ func (a *App) RunRecon(req ReconRequest) (*models.ReconResult, error) {
 			result.Candidates[i].Status = status
 			result.Candidates[i].SMTPCode = code
 			result.Candidates[i].SMTPMessage = msg
-			result.Candidates[i].Confidence = computeConfidence(status, result.Candidates[i].PatternName, provider, isCatchAll, port25Open, activePattern)
+			result.Candidates[i].Confidence = scorer.ComputeConfidence(status, result.Candidates[i].PatternName, provider, isCatchAll, port25Open, activePattern, detectedPattern)
 
 			if status == models.StatusValid {
 				result.BestCandidate = &result.Candidates[i]

@@ -26,6 +26,7 @@ type LeadTarget struct {
 	FullName        string `json:"full_name"`
 	FirstName       string `json:"first_name,omitempty"`
 	LastName        string `json:"last_name,omitempty"`
+	Pattern         string `json:"pattern,omitempty"`
 	PersonLinkedIn  string `json:"person_linkedin,omitempty"`
 	CompanyLinkedIn string `json:"company_linkedin,omitempty"`
 }
@@ -60,6 +61,7 @@ func ParseCSV(r io.Reader) ([]LeadTarget, error) {
 	colName := -1
 	colFirst := -1
 	colLast := -1
+	colPattern := -1
 	colPersonLI := -1
 	colCompanyLI := -1
 
@@ -84,6 +86,10 @@ func ParseCSV(r io.Reader) ([]LeadTarget, error) {
 		case norm == "lastname" || norm == "last" || norm == "surname":
 			if colLast == -1 {
 				colLast = i
+			}
+		case norm == "pattern" || norm == "emailpattern" || norm == "format" || norm == "namingconvention":
+			if colPattern == -1 {
+				colPattern = i
 			}
 		case strings.Contains(norm, "personlinkedin") || strings.Contains(norm, "profilelinkedin") || norm == "linkedin" || norm == "linkedinurl":
 			if colPersonLI == -1 {
@@ -134,6 +140,11 @@ func ParseCSV(r io.Reader) ([]LeadTarget, error) {
 			fullName = strings.TrimSpace(firstName + " " + lastName)
 		}
 
+		pattern := ""
+		if colPattern >= 0 && colPattern < len(row) {
+			pattern = strings.TrimSpace(row[colPattern])
+		}
+
 		personLI := ""
 		if colPersonLI >= 0 && colPersonLI < len(row) {
 			personLI = strings.TrimSpace(row[colPersonLI])
@@ -156,6 +167,7 @@ func ParseCSV(r io.Reader) ([]LeadTarget, error) {
 				FullName:        fullName,
 				FirstName:       firstName,
 				LastName:        lastName,
+				Pattern:         pattern,
 				PersonLinkedIn:  personLI,
 				CompanyLinkedIn: companyLI,
 			})
@@ -192,12 +204,12 @@ func ProcessSingleLead(ctx context.Context, target LeadTarget, proxyURL string, 
 		return nil, fmt.Errorf("could not extract first name for: %s", target.FullName)
 	}
 
-	// 2. Check Local Domain Cache for Instant Pattern Reuse
-	activePattern := ""
+	// 2. Check User-specified pattern or Local Domain Cache
+	activePattern := strings.ToLower(strings.TrimSpace(target.Pattern))
 	cachedProviderName := ""
 	var cachedProvider *models.ProviderInfo
-	if c != nil {
-		if dInfo, ok := c.GetDomainPattern(domain); ok {
+	if activePattern == "" && c != nil {
+		if dInfo, ok := c.GetDomainPattern(domain); ok && dInfo.Pattern != "" {
 			activePattern = dInfo.Pattern
 			cachedProviderName = dInfo.Provider
 			if cachedProviderName != "" {
@@ -320,7 +332,9 @@ func ProcessSingleLead(ctx context.Context, target LeadTarget, proxyURL string, 
 			provStr = provider.Name
 		}
 		if result.BestCandidate.PatternName != "" {
-			c.SetDomainPattern(domain, result.BestCandidate.PatternName, provStr, isCatchAll)
+			if result.BestCandidate.Status == models.StatusValid || result.DetectedPattern != "" {
+				c.SetDomainPattern(domain, result.BestCandidate.PatternName, provStr, isCatchAll)
+			}
 		}
 		savedLead := cache.ConvertReconResultToSavedLead(result)
 		if savedLead != nil {

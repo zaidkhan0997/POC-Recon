@@ -21,8 +21,8 @@ func TestScorerDetectedPatternElevation(t *testing.T) {
 	if firstConf <= firstLastConf {
 		t.Errorf("expected 'first' conf (%d) > 'first.last' conf (%d) when 'first' is active pattern", firstConf, firstLastConf)
 	}
-	if firstConf < 90 {
-		t.Errorf("expected 'first' conf >= 90 when active pattern, got %d", firstConf)
+	if firstConf < 60 || firstConf > 75 {
+		t.Errorf("expected 'first' conf to be in honest 60-75%% range when active pattern unverified, got %d", firstConf)
 	}
 }
 

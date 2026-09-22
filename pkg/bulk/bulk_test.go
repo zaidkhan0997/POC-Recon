@@ -53,6 +53,28 @@ Bob,Builder,builder.co
 	}
 }
 
+func TestParseCSVWithPattern(t *testing.T) {
+	csvData := `First Name,Last Name,Company Domain,Pattern
+Mohd,Zaid,oneirohire.com,first
+Satya,Nadella,microsoft.com,first.last
+`
+	targets, err := ParseCSV(strings.NewReader(csvData))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if len(targets) != 2 {
+		t.Fatalf("expected 2 targets, got %d", len(targets))
+	}
+
+	if targets[0].Pattern != "first" || targets[0].Domain != "oneirohire.com" {
+		t.Errorf("expected target 0 pattern 'first', got: %+v", targets[0])
+	}
+	if targets[1].Pattern != "first.last" {
+		t.Errorf("expected target 1 pattern 'first.last', got: %+v", targets[1])
+	}
+}
+
 func TestProcessBatchOffline(t *testing.T) {
 	targets := []LeadTarget{
 		{FullName: "Jane Doe", Domain: "example.com"},

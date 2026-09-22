@@ -211,9 +211,9 @@ function setupBulkRecon() {
 
     // Initialize Builder Rows
     builderRows = [
-        { id: 1, firstName: "", lastName: "", domain: "", personLi: "", companyLi: "" },
-        { id: 2, firstName: "", lastName: "", domain: "", personLi: "", companyLi: "" },
-        { id: 3, firstName: "", lastName: "", domain: "", personLi: "", companyLi: "" }
+        { id: 1, firstName: "", lastName: "", domain: "", pattern: "", personLi: "", companyLi: "" },
+        { id: 2, firstName: "", lastName: "", domain: "", pattern: "", personLi: "", companyLi: "" },
+        { id: 3, firstName: "", lastName: "", domain: "", pattern: "", personLi: "", companyLi: "" }
     ];
     renderBuilderTable();
 
@@ -227,7 +227,7 @@ function setupBulkRecon() {
 
     btnClearRows.addEventListener("click", () => {
         builderRows = [
-            { id: 1, firstName: "", lastName: "", domain: "", personLi: "", companyLi: "" }
+            { id: 1, firstName: "", lastName: "", domain: "", pattern: "", personLi: "", companyLi: "" }
         ];
         renderBuilderTable();
         showToast("Cleared all prospect rows");
@@ -409,16 +409,30 @@ function renderBuilderTable() {
 
     builderRows.forEach((row, idx) => {
         const tr = document.createElement("tr");
+        const p = row.pattern || "";
         tr.innerHTML = `
             <td class="builder-row-num">${idx + 1}</td>
             <td>
-                <input type="text" class="builder-input row-first" placeholder="e.g. Satya" value="${escapeHtml(row.firstName)}" data-id="${row.id}">
+                <input type="text" class="builder-input row-first" placeholder="e.g. Mohd" value="${escapeHtml(row.firstName)}" data-id="${row.id}">
             </td>
             <td>
-                <input type="text" class="builder-input row-last" placeholder="e.g. Nadella" value="${escapeHtml(row.lastName)}" data-id="${row.id}">
+                <input type="text" class="builder-input row-last" placeholder="e.g. Zaid" value="${escapeHtml(row.lastName)}" data-id="${row.id}">
             </td>
             <td>
-                <input type="text" class="builder-input row-domain" placeholder="e.g. microsoft.com" value="${escapeHtml(row.domain)}" data-id="${row.id}">
+                <input type="text" class="builder-input row-domain" placeholder="e.g. oneirohire.com" value="${escapeHtml(row.domain)}" data-id="${row.id}">
+            </td>
+            <td>
+                <select class="builder-input row-pattern" data-id="${row.id}" style="padding: 5px 8px; font-size: 0.82rem; background: var(--bg-card); color: var(--text-main); border: 1px solid var(--border-color); border-radius: 6px; width: 100%;">
+                    <option value="" ${p === "" ? "selected" : ""}>Auto-Detect</option>
+                    <option value="first" ${p === "first" ? "selected" : ""}>first (e.g. zaid@...)</option>
+                    <option value="first.last" ${p === "first.last" ? "selected" : ""}>first.last (e.g. mohd.zaid@...)</option>
+                    <option value="flast" ${p === "flast" ? "selected" : ""}>flast (e.g. mzaid@...)</option>
+                    <option value="firstlast" ${p === "firstlast" ? "selected" : ""}>firstlast (e.g. mohdzaid@...)</option>
+                    <option value="first_last" ${p === "first_last" ? "selected" : ""}>first_last (e.g. mohd_zaid@...)</option>
+                    <option value="last" ${p === "last" ? "selected" : ""}>last (e.g. zaid@...)</option>
+                    <option value="last.first" ${p === "last.first" ? "selected" : ""}>last.first (e.g. zaid.mohd@...)</option>
+                    <option value="f.last" ${p === "f.last" ? "selected" : ""}>f.last (e.g. m.zaid@...)</option>
+                </select>
             </td>
             <td>
                 <input type="text" class="builder-input row-person-li" placeholder="https://linkedin.com/in/..." value="${escapeHtml(row.personLi)}" data-id="${row.id}">
@@ -461,11 +475,20 @@ function renderBuilderTable() {
         });
     });
 
+    tbody.querySelectorAll("select.row-pattern").forEach(sel => {
+        sel.addEventListener("change", (e) => {
+            const id = parseInt(e.target.getAttribute("data-id"));
+            const r = builderRows.find(item => item.id === id);
+            if (!r) return;
+            r.pattern = e.target.value.trim();
+        });
+    });
+
     tbody.querySelectorAll(".btn-remove-row").forEach(btn => {
         btn.addEventListener("click", () => {
             const id = parseInt(btn.getAttribute("data-id"));
             if (builderRows.length <= 1) {
-                builderRows = [{ id: 1, firstName: "", lastName: "", domain: "", personLi: "", companyLi: "" }];
+                builderRows = [{ id: 1, firstName: "", lastName: "", domain: "", pattern: "", personLi: "", companyLi: "" }];
             } else {
                 builderRows = builderRows.filter(r => r.id !== id);
             }
@@ -476,7 +499,7 @@ function renderBuilderTable() {
 
 function addBuilderRow() {
     const nextId = builderRows.length > 0 ? Math.max(...builderRows.map(r => r.id)) + 1 : 1;
-    builderRows.push({ id: nextId, firstName: "", lastName: "", domain: "", personLi: "", companyLi: "" });
+    builderRows.push({ id: nextId, firstName: "", lastName: "", domain: "", pattern: "", personLi: "", companyLi: "" });
     renderBuilderTable();
 
     // Focus first input of the newly added row
@@ -498,9 +521,9 @@ function updateBuilderCounter() {
 
 function loadSampleLeads() {
     builderRows = [
-        { id: 1, firstName: "Satya", lastName: "Nadella", domain: "microsoft.com", personLi: "https://www.linkedin.com/in/satyanadella", companyLi: "https://www.linkedin.com/company/microsoft" },
-        { id: 2, firstName: "Tim", lastName: "Cook", domain: "apple.com", personLi: "https://www.linkedin.com/in/tim-cook", companyLi: "https://www.linkedin.com/company/apple" },
-        { id: 3, firstName: "Sam", lastName: "Altman", domain: "openai.com", personLi: "https://www.linkedin.com/in/samaltman", companyLi: "https://www.linkedin.com/company/openai" }
+        { id: 1, firstName: "Satya", lastName: "Nadella", domain: "microsoft.com", pattern: "first.last", personLi: "https://www.linkedin.com/in/satyanadella", companyLi: "https://www.linkedin.com/company/microsoft" },
+        { id: 2, firstName: "Tim", lastName: "Cook", domain: "apple.com", pattern: "first", personLi: "https://www.linkedin.com/in/tim-cook", companyLi: "https://www.linkedin.com/company/apple" },
+        { id: 3, firstName: "Sam", lastName: "Altman", domain: "openai.com", pattern: "first", personLi: "https://www.linkedin.com/in/samaltman", companyLi: "https://www.linkedin.com/company/openai" }
     ];
     renderBuilderTable();
     showToast("Loaded 3 corporate sample leads ready for discovery!");
@@ -518,6 +541,7 @@ function getValidBuilderTargets() {
                 full_name: ln ? `${fn} ${ln}` : fn,
                 first_name: fn,
                 last_name: ln,
+                pattern: r.pattern ? r.pattern.trim() : "",
                 person_linkedin: r.personLi.trim(),
                 company_linkedin: r.companyLi.trim()
             });
@@ -533,9 +557,9 @@ function downloadGeneratedCSV() {
         return;
     }
 
-    const header = "First Name,Last Name,Company Domain,Person LinkedIn,Company LinkedIn\n";
+    const header = "First Name,Last Name,Company Domain,Pattern,Person LinkedIn,Company LinkedIn\n";
     const rows = valid.map(t => 
-        `"${t.first_name}","${t.last_name}","${t.domain}","${t.person_linkedin}","${t.company_linkedin}"`
+        `"${t.first_name}","${t.last_name}","${t.domain}","${t.pattern || ""}","${t.person_linkedin}","${t.company_linkedin}"`
     ).join("\n");
     const csvContent = header + rows;
 
@@ -582,15 +606,23 @@ function renderBulkResults(results) {
     resultsSection.classList.remove("hidden");
     document.getElementById("bulk-total-count").textContent = results.length;
 
-    results.forEach((r) => {
+    results.forEach((r, rowIdx) => {
         const tr = document.createElement("tr");
+        tr.setAttribute("data-row-idx", rowIdx);
 
-        // Format Alternative Permutations
+        const isUnverified = !r.status || r.status.toUpperCase().includes("UNVERIFIED") || r.status.toUpperCase().includes("BLOCKED");
+        const isValid = r.status && r.status.toUpperCase() === "VALID";
+
+        const confColor = isValid ? "#10b981" : (isUnverified ? "#f59e0b" : "var(--accent-sky)");
+        const confLabel = isUnverified ? `${r.confidence || 48}% <small style="font-size: 0.72rem; opacity: 0.85;">(Heuristic)</small>` : `${r.confidence || 100}%`;
+        const badgeCls = isValid ? "badge-success" : (isUnverified ? "badge-warning" : getBadgeClass(r.status));
+
+        // Format Alternative Permutations with 1-click promotion
         const alts = r.alternatives || [];
         let altsHtml = `<span style="color: var(--text-muted); font-size: 0.8rem;">-</span>`;
         if (alts.length > 0) {
             const badges = alts.map(a => 
-                `<span class="batch-alt-badge btn-copy-alt" data-email="${escapeHtml(a)}" title="Click to copy ${escapeHtml(a)}">${escapeHtml(a)}</span>`
+                `<span class="batch-alt-badge btn-promote-alt" data-row-idx="${rowIdx}" data-email="${escapeHtml(a)}" title="Click to set ${escapeHtml(a)} as Primary Email">${escapeHtml(a)} <span style="font-size: 0.68rem; opacity: 0.75; margin-left: 3px;">⚡ Set</span></span>`
             ).join("");
             altsHtml = `<div class="batch-alts-tags">${badges}</div>`;
         }
@@ -598,14 +630,18 @@ function renderBulkResults(results) {
         tr.innerHTML = `
             <td><strong>${escapeHtml(r.full_name)}</strong></td>
             <td><code>${escapeHtml(r.domain)}</code></td>
-            <td><strong style="color: #38bdf8;">${escapeHtml(r.email)}</strong></td>
-            <td><span style="color: var(--accent-sky); font-weight: 700;">${r.confidence || 0}%</span></td>
-            <td><span class="badge ${getBadgeClass(r.status)}">${escapeHtml(r.status)}</span></td>
-            <td><code>${escapeHtml(r.pattern || "-")}</code></td>
+            <td>
+                <div style="display: flex; align-items: center; gap: 6px;">
+                    <strong class="primary-email-cell" style="color: ${isValid ? '#38bdf8' : '#e2e8f0'}; font-size: 0.92rem;">${escapeHtml(r.email)}</strong>
+                </div>
+            </td>
+            <td><span class="confidence-cell" style="color: ${confColor}; font-weight: 700;">${confLabel}</span></td>
+            <td><span class="badge ${badgeCls}">${escapeHtml(r.status)}</span></td>
+            <td><code class="pattern-cell">${escapeHtml(r.pattern || "-")}</code></td>
             <td class="batch-alts-cell">${altsHtml}</td>
             <td>
                 <div style="display: flex; gap: 4px;">
-                    <button class="btn-text btn-copy-row" data-email="${escapeHtml(r.email)}" style="font-size: 0.78rem; padding: 2px 6px;" title="Copy primary verified email">
+                    <button class="btn-text btn-copy-row" data-email="${escapeHtml(r.email)}" style="font-size: 0.78rem; padding: 2px 6px;" title="Copy primary email">
                         📋 Copy
                     </button>
                     ${alts.length > 0 ? `
@@ -616,6 +652,50 @@ function renderBulkResults(results) {
             </td>
         `;
         tbody.appendChild(tr);
+    });
+
+    // 1-Click Promote Alternative to Primary Email
+    tbody.querySelectorAll(".btn-promote-alt").forEach(badge => {
+        badge.addEventListener("click", () => {
+            const rowIdx = parseInt(badge.getAttribute("data-row-idx"));
+            const newEmail = badge.getAttribute("data-email");
+            const lead = results[rowIdx];
+            if (!lead || !newEmail) return;
+
+            const oldEmail = lead.email;
+            lead.email = newEmail;
+
+            // Reconstruct alternatives list
+            const prevAlts = lead.alternatives || [];
+            lead.alternatives = prevAlts.filter(a => a.toLowerCase() !== newEmail.toLowerCase());
+            if (oldEmail && !lead.alternatives.includes(oldEmail)) {
+                lead.alternatives.unshift(oldEmail);
+            }
+
+            // Update row UI
+            const tr = tbody.querySelector(`tr[data-row-idx="${rowIdx}"]`);
+            if (tr) {
+                const emCell = tr.querySelector(".primary-email-cell");
+                if (emCell) {
+                    emCell.textContent = newEmail;
+                    emCell.style.color = "#38bdf8";
+                }
+                const copyBtn = tr.querySelector(".btn-copy-row");
+                if (copyBtn) copyBtn.setAttribute("data-email", newEmail);
+
+                // Re-render alternatives cell for this row
+                const altsCell = tr.querySelector(".batch-alts-cell");
+                if (altsCell && lead.alternatives.length > 0) {
+                    altsCell.innerHTML = `<div class="batch-alts-tags">${lead.alternatives.map(a => 
+                        `<span class="batch-alt-badge btn-promote-alt" data-row-idx="${rowIdx}" data-email="${escapeHtml(a)}" title="Click to set ${escapeHtml(a)} as Primary Email">${escapeHtml(a)} <span style="font-size: 0.68rem; opacity: 0.75; margin-left: 3px;">⚡ Set</span></span>`
+                    ).join("")}</div>`;
+                }
+            }
+
+            navigator.clipboard.writeText(newEmail).then(() => {
+                showToast(`Primary updated & copied: ${newEmail}`);
+            });
+        });
     });
 
     tbody.querySelectorAll(".btn-copy-row").forEach(btn => {
@@ -778,11 +858,14 @@ function renderResults(result) {
 
     // Hero card
     const best = result.best_candidate || (result.candidates && result.candidates[0]);
+    const isUnverified = best && (!best.status || best.status.toUpperCase().includes("UNVERIFIED") || best.status.toUpperCase().includes("BLOCKED"));
     if (best) {
         document.getElementById("hero-email").textContent = best.email;
-        document.getElementById("hero-confidence").textContent = best.confidence || 85;
-        document.getElementById("hero-status-label").textContent = best.status;
-        document.getElementById("hero-explanation").textContent = best.smtp_message || "Target corporate email candidate.";
+        document.getElementById("hero-confidence").textContent = best.confidence || (isUnverified ? 48 : 100);
+        const statusLabel = document.getElementById("hero-status-label");
+        statusLabel.textContent = best.status;
+        statusLabel.className = "badge " + (isUnverified ? "badge-warning" : getBadgeClass(best.status));
+        document.getElementById("hero-explanation").textContent = best.smtp_message || (isUnverified ? "Unverified heuristic candidate evaluated (Port 25 blocked)." : "Corporate email address.");
     }
 
     // Render Alternative Permutations Pills in Hero Card
@@ -800,14 +883,22 @@ function renderResults(result) {
                 const pill = document.createElement("button");
                 pill.type = "button";
                 pill.className = "alt-pill";
-                pill.title = `Click to copy ${alt.email} (${alt.pattern_name})`;
+                pill.title = `Click to set as primary email & copy (${alt.pattern_name})`;
                 pill.innerHTML = `
                     <span>${escapeHtml(alt.email)}</span>
                     <span class="alt-pill-pattern">${escapeHtml(alt.pattern_name)}</span>
+                    <span style="font-size: 0.7rem; margin-left: 4px; opacity: 0.85;">⚡ Set</span>
                 `;
                 pill.addEventListener("click", () => {
+                    document.getElementById("hero-email").textContent = alt.email;
+                    document.getElementById("hero-confidence").textContent = alt.confidence || (isUnverified ? 48 : 100);
+                    const statusLabel = document.getElementById("hero-status-label");
+                    statusLabel.textContent = alt.status;
+                    statusLabel.className = "badge " + (isUnverified ? "badge-warning" : getBadgeClass(alt.status));
+                    document.getElementById("hero-explanation").textContent = alt.smtp_message || `Selected corporate candidate (${alt.pattern_name})`;
+
                     navigator.clipboard.writeText(alt.email).then(() => {
-                        showToast("Copied: " + alt.email);
+                        showToast(`Primary updated & copied: ${alt.email}`);
                     });
                 });
                 altsPills.appendChild(pill);
@@ -816,7 +907,8 @@ function renderResults(result) {
             const btnCopyAll = document.getElementById("btn-copy-all-alts");
             if (btnCopyAll) {
                 btnCopyAll.onclick = () => {
-                    const allEmails = [bestEmail, ...alternatives.map(a => a.email)].filter(Boolean).join("\n");
+                    const activeHeroEmail = document.getElementById("hero-email").textContent;
+                    const allEmails = [activeHeroEmail, ...alternatives.map(a => a.email)].filter(Boolean).join("\n");
                     navigator.clipboard.writeText(allEmails).then(() => {
                         showToast(`Copied all ${alternatives.length + 1} email permutations`);
                     });
